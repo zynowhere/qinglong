@@ -13,23 +13,37 @@
 const querystring = require('querystring');
 const $ = new Env();
 const timeout = 15000; //超时时间(单位毫秒)
+// =======================================gotify通知设置区域==============================================
+//gotify_url 填写gotify地址,如https://push.example.de:8080
+//gotify_token 填写gotify的消息应用token
+//gotify_priority 填写推送消息优先级,默认为0
+let GOTIFY_URL = '';
+let GOTIFY_TOKEN = '';
+let GOTIFY_PRIORITY = 0;
 // =======================================go-cqhttp通知设置区域===========================================
 //gobot_url 填写请求地址http://127.0.0.1/send_private_msg
 //gobot_token 填写在go-cqhttp文件设置的访问密钥
 //gobot_qq 填写推送到个人QQ或者QQ群号
 //go-cqhttp相关API https://docs.go-cqhttp.org/api
-let GOBOT_URL = ''; // 推送到个人QQ: http://127.0.0.1/send_private_msg  群：http://127.0.0.1/send_group_msg 
+let GOBOT_URL = ''; // 推送到个人QQ: http://127.0.0.1/send_private_msg  群：http://127.0.0.1/send_group_msg
 let GOBOT_TOKEN = ''; //访问密钥
-let GOBOT_QQ = ''; // 如果GOBOT_URL设置 /send_private_msg 则需要填入 user_id=个人QQ 相反如果是 /send_group_msg 则需要填入 group_id=QQ群 
+let GOBOT_QQ = ''; // 如果GOBOT_URL设置 /send_private_msg 则需要填入 user_id=个人QQ 相反如果是 /send_group_msg 则需要填入 group_id=QQ群
 
 // =======================================微信server酱通知设置区域===========================================
 //此处填你申请的SCKEY.
 //(环境变量名 PUSH_KEY)
 let SCKEY = '';
 
+// =======================================PushDeer通知设置区域===========================================
+//此处填你申请的PushDeer KEY.
+//(环境变量名 DEER_KEY)
+let PUSHDEER_KEY = '';
+
 // =======================================Bark App通知设置区域===========================================
 //此处填你BarkAPP的信息(IP/设备码，例如：https://api.day.app/XXXXXXXX)
 let BARK_PUSH = '';
+//BARK app推送图标,自定义推送图标(需iOS15或以上)
+let BARK_ICON = 'http://qn.whyour.cn/logo.png';
 //BARK app推送铃声,铃声列表去APP查看复制填写
 let BARK_SOUND = '';
 //BARK app推送消息的分组, 默认为"QingLong"
@@ -84,6 +98,16 @@ let PUSH_PLUS_TOKEN = '';
 let PUSH_PLUS_USER = '';
 
 //==========================云端环境变量的判断与接收=========================
+if (process.env.GOTIFY_URL) {
+  GOTIFY_URL = process.env.GOTIFY_URL;
+}
+if (process.env.GOTIFY_TOKEN) {
+  GOTIFY_TOKEN = process.env.GOTIFY_TOKEN;
+}
+if (process.env.GOTIFY_PRIORITY) {
+  GOTIFY_PRIORITY = process.env.GOTIFY_PRIORITY;
+}
+
 if (process.env.GOBOT_URL) {
   GOBOT_URL = process.env.GOBOT_URL;
 }
@@ -96,6 +120,10 @@ if (process.env.GOBOT_QQ) {
 
 if (process.env.PUSH_KEY) {
   SCKEY = process.env.PUSH_KEY;
+}
+
+if (process.env.DEER_KEY) {
+  PUSHDEER_KEY = process.env.DEER_KEY;
 }
 
 if (process.env.QQ_SKEY) {
@@ -115,6 +143,9 @@ if (process.env.BARK_PUSH) {
     BARK_PUSH = process.env.BARK_PUSH;
   } else {
     BARK_PUSH = `https://api.day.app/${process.env.BARK_PUSH}`;
+  }
+  if (process.env.BARK_ICON) {
+    BARK_ICON = process.env.BARK_ICON;
   }
   if (process.env.BARK_SOUND) {
     BARK_SOUND = process.env.BARK_SOUND;
@@ -199,8 +230,46 @@ async function sendNotify(
     qywxBotNotify(text, desp), //企业微信机器人
     qywxamNotify(text, desp), //企业微信应用消息推送
     iGotNotify(text, desp, params), //iGot
-    gobotNotify(text, desp),//go-cqhttp
+    gobotNotify(text, desp), //go-cqhttp
+    gotifyNotify(text, desp), //gotify
   ]);
+}
+
+function gotifyNotify(text, desp) {
+  return new Promise((resolve) => {
+    if (GOTIFY_URL && GOTIFY_TOKEN) {
+      const options = {
+        url: `${GOTIFY_URL}/message?token=${GOTIFY_TOKEN}`,
+        body: `title=${encodeURIComponent(text)}&message=${encodeURIComponent(
+          desp,
+        )}&priority=${GOTIFY_PRIORITY}`,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      };
+      $.post(options, (err, resp, data) => {
+        try {
+          if (err) {
+            console.log('gotify发送通知调用API失败！！\n');
+            console.log(err);
+          } else {
+            data = JSON.parse(data);
+            if (data.id) {
+              console.log('gotify发送通知消息成功🎉\n');
+            } else {
+              console.log(`${data.message}\n`);
+            }
+          }
+        } catch (e) {
+          $.logErr(e, resp);
+        } finally {
+          resolve();
+        }
+      });
+    } else {
+      resolve();
+    }
+  });
 }
 
 function gobotNotify(text, desp, time = 2100) {
@@ -208,7 +277,7 @@ function gobotNotify(text, desp, time = 2100) {
     if (GOBOT_URL) {
       const options = {
         url: `${GOBOT_URL}?access_token=${GOBOT_TOKEN}&${GOBOT_QQ}`,
-        json: {message:`${text}\n${desp}`},
+        json: { message: `${text}\n${desp}` },
         headers: {
           'Content-Type': 'application/json',
         },
@@ -277,6 +346,52 @@ function serverNotify(text, desp, time = 2100) {
               } else {
                 console.log(
                   `server酱发送通知消息异常\n${JSON.stringify(data)}`,
+                );
+              }
+            }
+          } catch (e) {
+            $.logErr(e, resp);
+          } finally {
+            resolve(data);
+          }
+        });
+      }, time);
+    } else {
+      resolve();
+    }
+  });
+}
+
+function PushDeerNotify(text, desp, time = 2100) {
+  return new Promise((resolve) => {
+    if (PUSHDEER_KEY) {
+      // PushDeer 建议对消息内容进行 urlencode
+      desp = encodeURI(desp);
+      const options = {
+        url: `https://api2.pushdeer.com/message/push`,
+        body: `pushkey=${PUSHDEER_KEY}&text=${text}&desp=${desp}&type=markdown`,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        timeout,
+      };
+      setTimeout(() => {
+        $.post(options, (err, resp, data) => {
+          try {
+            if (err) {
+              console.log('发送通知调用API失败！！\n');
+              console.log(err);
+            } else {
+              data = JSON.parse(data);
+              // 通过返回的result的长度来判断是否成功
+              if (
+                data.content.result.length !== undefined &&
+                data.content.result.length > 0
+              ) {
+                console.log('PushDeer发送通知消息成功🎉\n');
+              } else {
+                console.log(
+                  `PushDeer发送通知消息异常\n${JSON.stringify(data)}`,
                 );
               }
             }
@@ -376,7 +491,9 @@ function BarkNotify(text, desp, params = {}) {
       const options = {
         url: `${BARK_PUSH}/${encodeURIComponent(text)}/${encodeURIComponent(
           desp,
-        )}?sound=${BARK_SOUND}&group=${BARK_GROUP}&${querystring.stringify(params)}`,
+        )}?icon=${BARK_ICON}?sound=${BARK_SOUND}&group=${BARK_GROUP}&${querystring.stringify(
+          params,
+        )}`,
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
@@ -412,9 +529,13 @@ function tgBotNotify(text, desp) {
     if (TG_BOT_TOKEN && TG_USER_ID) {
       const options = {
         url: `https://${TG_API_HOST}/bot${TG_BOT_TOKEN}/sendMessage`,
-        body: `chat_id=${TG_USER_ID}&text=${text}\n\n${desp}&disable_web_page_preview=true`,
+        json: {
+          chat_id: `${TG_USER_ID}`,
+          text: `${text}\n\n${desp}`,
+          disable_web_page_preview: true,
+        },
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
         },
         timeout,
       };

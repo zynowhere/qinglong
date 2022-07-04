@@ -2,90 +2,68 @@ import { Service, Inject } from 'typedi';
 import winston from 'winston';
 import { createRandomString } from '../config/util';
 import config from '../config';
-import DataStore from 'nedb';
-import { App } from '../data/open';
+import { App, AppModel } from '../data/open';
 import { v4 as uuidV4 } from 'uuid';
-import { dbs } from '../loaders/db';
+import sequelize, { Op } from 'sequelize';
 
 @Service()
 export default class OpenService {
-  private appDb = dbs.appDb;
-
   constructor(@Inject('logger') private logger: winston.Logger) {}
 
-  public async findTokenByValue(token: string): Promise<App> {
-    return new Promise((resolve) => {
-      this.appDb.find(
-        { tokens: { $elemMatch: { value: token } } },
-        (err, docs) => {
-          if (err) {
-            this.logger.error(err);
-          } else {
-            resolve(docs[0]);
-          }
-        },
-      );
-    });
+  public async findTokenByValue(token: string): Promise<App | null> {
+    const docs = await this.find({});
+    const doc = docs.filter((x) => x.tokens?.find((y) => y.value === token));
+    return doc[0];
   }
 
   public async create(payload: App): Promise<App> {
-    const tab = new App({ ...payload });
+    const tab = { ...payload };
     tab.client_id = createRandomString(12, 12);
     tab.client_secret = createRandomString(24, 24);
-    const docs = await this.insert([tab]);
-    return { ...docs[0], tokens: [] };
+    const doc = await this.insert(tab);
+    return { ...doc, tokens: [] };
   }
 
-  public async insert(payloads: App[]): Promise<App[]> {
-    return new Promise((resolve) => {
-      this.appDb.insert(payloads, (err, docs) => {
-        if (err) {
-          this.logger.error(err);
-        } else {
-          resolve(docs);
-        }
-      });
-    });
+  public async insert(payload: App): Promise<App> {
+    const doc = await AppModel.create(payload, { returning: true });
+    return doc.get({ plain: true }) as App;
   }
 
   public async update(payload: App): Promise<App> {
-    const { _id, client_id, client_secret, tokens, ...other } = payload;
-    const doc = await this.get(_id);
-    const tab = new App({ ...doc, ...other });
-    const newDoc = await this.updateDb(tab);
+    const newDoc = await this.updateDb({
+      name: payload.name,
+      scopes: payload.scopes,
+      id: payload.id,
+    } as any);
     return { ...newDoc, tokens: [] };
   }
 
   private async updateDb(payload: App): Promise<App> {
-    return new Promise((resolve) => {
-      this.appDb.update(
-        { _id: payload._id },
-        payload,
-        { returnUpdatedDocs: true },
-        (err, num, doc, up) => {
-          if (err) {
-            this.logger.error(err);
-          } else {
-            resolve(doc);
-          }
-        },
-      );
-    });
+    await AppModel.update(payload, { where: { id: payload.id } });
+    return await this.getDb({ id: payload.id });
   }
 
-  public async remove(ids: string[]) {
-    return new Promise((resolve: any) => {
-      this.appDb.remove({ _id: { $in: ids } }, { multi: true }, async (err) => {
-        resolve();
-      });
-    });
+  public async getDb(query: any): Promise<App> {
+    const doc: any = await AppModel.findOne({ where: query });
+    return doc && (doc.get({ plain: true }) as App);
   }
 
-  public async resetSecret(_id: string): Promise<App> {
-    const doc = await this.get(_id);
-    const tab = new App({ ...doc });
-    tab.client_secret = createRandomString(24, 24);
-    tab.tokens = [];
+  public async remove(ids: number[]) {
+    await AppModel.destroy({ where: { id: ids } });
+  }
+
+  public async resetSecret(id: number): Promise<App> {
+    const tab: any = {
+      client_secret: createRandomString(24, 24),
+      tokens: [],
+      id,
+    };
+    // const doc = await this.get(id);
+    // const tab = new App({ ...doc });
+    // tab.client_secret = createRandomString(24, 24);
+    // tab.tokens = [];
+    // const newDoc = await this.updateDb(tab);
+    // return newDoc;
     const newDoc = await this.updateDb(tab);
     return newDoc;
   }
@@ -97,42 +75,30 @@ export default class OpenService {
   ): Promise<App[]> {
     let condition = { ...query };
     if (searchText) {
-      const reg = new RegExp(searchText);
-      condition = {
-        $or: [
-          {
-            value: reg,
-          },
-          {
-            name: reg,
-          },
-          {
-            remarks: reg,
-          },
+      const encodeText = encodeURIComponent(searchText);
+      const reg = {
+        [Op.or]: [
+          { [Op.like]: `%${searchText}%` },
+          { [Op.like]: `%${encodeText}%` },
         ],
       };
+
+      condition = {
+        ...condition,
+        name: reg,
+      };
     }
-    const newDocs = await this.find(condition, sort);
-    return newDocs.map((x) => ({ ...x, tokens: [] }));
+    try {
+      const result = await this.find(condition);
+      return result.map((x) => ({ ...x, tokens: [] }));
+    } catch (error) {
+      throw error;
+    }
   }
 
-  private async find(query: any, sort: any): Promise<App[]> {
-    return new Promise((resolve) => {
-      this.appDb
-        .find(query)
-        .sort({ ...sort })
-        .exec((err, docs) => {
-          resolve(docs);
-        });
-    });
-  }
-
-  public async get(_id: string): Promise<App> {
-    return new Promise((resolve) => {
-      this.appDb.find({ _id }).exec((err, docs) => {
-        resolve(docs[0]);
-      });
-    });
+  private async find(query: any, sort?: any): Promise<App[]> {
+    const docs = await AppModel.findAll({ where: { ...query } });
+    return docs.map((x) => x.get({ plain: true }));
   }
 
   public async authToken({
@@ -142,30 +108,38 @@ export default class OpenService {
     client_id: string;
     client_secret: string;
   }): Promise<any> {
-    const token = uuidV4();
+    let token = uuidV4();
     const expiration = Math.round(Date.now() / 1000) + 2592000; // 2592000 30天
-    return new Promise((resolve) => {
-      this.appDb.find({ client_id, client_secret }).exec((err, docs) => {
-        if (docs && docs[0]) {
-          this.appDb.update(
-            { client_id, client_secret },
-            { $push: { tokens: { value: token, expiration } } },
-            {},
-            (err, num, doc) => {
-              resolve({
-                code: 200,
-                data: {
-                  token,
-                  token_type: 'Bearer',
-                  expiration,
-                },
-              });
-            },
-          );
-        } else {
-          resolve({ code: 400, message: 'client_id或client_seret有误' });
-        }
-      });
-    });
+    const doc = await AppModel.findOne({ where: { client_id, client_secret } });
+    if (doc) {
+      const timestamp = Math.round(Date.now() / 1000);
+      const invalidTokens = (doc.tokens || []).filter(
+        (x) => x.expiration >= timestamp,
+      );
+      let tokens = invalidTokens;
+      if (invalidTokens.length > 5) {
+        tokens = [
+          ...invalidTokens.slice(0, 4),
+          { ...invalidTokens[4], expiration },
+        ];
+        token = invalidTokens[4].value;
+      } else {
+        tokens = [...invalidTokens, { value: token, expiration }];
+      }
+      await AppModel.update(
+        { tokens },
+        { where: { client_id, client_secret } },
+      );
+      return {
+        code: 200,
+        data: {
+          token,
+          token_type: 'Bearer',
+          expiration,
+        },
+      };
+    } else {
+      return { code: 400, message: 'client_id或client_seret有误' };
+    }
   }
 }

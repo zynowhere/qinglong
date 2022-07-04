@@ -16,8 +16,8 @@ DefaultCronRule=""
 ## ql repo命令拉取脚本时需要拉取的文件后缀，直接写文件后缀名即可
 RepoFileExtensions="js py"
 
-## 由于github仓库拉取较慢，所以会默认添加代理前缀，如不需要请移除
-GithubProxyUrl="https://ghproxy.com/"
+## 代理地址，支持http/https/socks，例如 http://127.0.0.1:7890
+ProxyUrl=""
 
 ## 设置定时任务执行的超时时间，默认1h，后缀"s"代表秒(默认值), "m"代表分, "h"代表小时, "d"代表天
 CommandTimeoutTime="1h"
@@ -35,6 +35,9 @@ EnableExtraShell="true"
 ## 是否自动启动bot，默认不启动，设置为true时自动启动，目前需要自行克隆bot仓库所需代码，存到ql/repo目录下，文件夹命名为dockerbot
 AutoStartBot=""
 
+## 是否使用第三方bot，默认不使用，使用时填入仓库地址，存到ql/repo目录下，文件夹命名为diybot
+BotRepoUrl=""
+
 ## 安装bot依赖时指定pip源，默认使用清华源，如不需要源，设置此参数为空
 PipMirror="https://pypi.tuna.tsinghua.edu.cn/simple"
 
@@ -47,12 +50,14 @@ export PUSH_KEY=""
 ## 2. BARK
 ## 下方填写app提供的设备码，例如：https://api.day.app/123 那么此处的设备码就是123
 export BARK_PUSH=""
+## 下方填写推送图标设置，自定义推送图标(需iOS15或以上)
+export BARK_ICON="http://qn.whyour.cn/logo.png"
 ## 下方填写推送声音设置，例如choo，具体值请在bark-推送铃声-查看所有铃声
 export BARK_SOUND=""
 ## 下方填写推送消息分组，默认为"QingLong"
 export BARK_GROUP="QingLong"
 
-## 3. Telegram 
+## 3. Telegram
 ## 下方填写自己申请@BotFather的Token，如10xxx4:AAFcqxxxxgER5uw
 export TG_BOT_TOKEN=""
 ## 下方填写 @getuseridbot 中获取到的纯数字ID
@@ -73,7 +78,7 @@ export TG_PROXY_AUTH=""
 ## 如需使用，请赋值代理地址链接，并自行解除下一行的注释
 export TG_API_HOST=""
 
-## 4. 钉钉 
+## 4. 钉钉
 ## 官方文档：https://developers.dingtalk.com/document/app/custom-robot-access
 ## 下方填写token后面的内容，只需 https://oapi.dingtalk.com/robot/send?access_token=XXX 等于=符号后面的XXX即可
 export DD_BOT_TOKEN=""
@@ -104,12 +109,24 @@ export PUSH_PLUS_TOKEN=""
 export PUSH_PLUS_USER=""
 
 ## 9. go-cqhttp
-## gobot_url 推送到个人QQ: http://127.0.0.1/send_private_msg  群：http://127.0.0.1/send_group_msg 
+## gobot_url 推送到个人QQ: http://127.0.0.1/send_private_msg  群：http://127.0.0.1/send_group_msg
 ## gobot_token 填写在go-cqhttp文件设置的访问密钥
-## gobot_qq 如果GOBOT_URL设置 /send_private_msg 则需要填入 user_id=个人QQ 相反如果是 /send_group_msg 则需要填入 group_id=QQ群 
+## gobot_qq 如果GOBOT_URL设置 /send_private_msg 则需要填入 user_id=个人QQ 相反如果是 /send_group_msg 则需要填入 group_id=QQ群
 ## go-cqhttp相关API https://docs.go-cqhttp.org/api
 export GOBOT_URL=""
 export GOBOT_TOKEN=""
 export GOBOT_QQ=""
+
+## 10. gotify
+## gotify_url 填写gotify地址,如https://push.example.de:8080
+## gotify_token 填写gotify的消息应用token
+## gotify_priority 填写推送消息优先级,默认为0
+export GOTIFY_URL=""
+export GOTIFY_TOKEN=""
+export GOTIFY_PRIORITY=0
+
+## 11. PushDeer
+## deer_key 填写PushDeer的key
+export DEER_KEY=""
 
 ## 其他需要的变量，脚本中需要的变量使用 export 变量名= 声明即可

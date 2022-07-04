@@ -16,7 +16,6 @@ export default (app: Router) => {
         const data = await openService.list();
         return res.send({ code: 200, data });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
@@ -37,7 +36,6 @@ export default (app: Router) => {
         const data = await openService.create(req.body);
         return res.send({ code: 200, data });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
@@ -49,7 +47,7 @@ export default (app: Router) => {
       body: Joi.object({
         name: Joi.string().optional().allow(''),
         scopes: Joi.array().items(Joi.string()),
-        _id: Joi.string().required(),
+        id: Joi.number().required(),
       }),
     }),
     async (req: Request, res: Response, next: NextFunction) => {
@@ -59,7 +57,6 @@ export default (app: Router) => {
         const data = await openService.update(req.body);
         return res.send({ code: 200, data });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
@@ -68,7 +65,7 @@ export default (app: Router) => {
   route.delete(
     '/apps',
     celebrate({
-      body: Joi.array().items(Joi.string().required()),
+      body: Joi.array().items(Joi.number().required()),
     }),
     async (req: Request, res: Response, next: NextFunction) => {
       const logger: Logger = Container.get('logger');
@@ -77,7 +74,6 @@ export default (app: Router) => {
         const data = await openService.remove(req.body);
         return res.send({ code: 200, data });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
@@ -87,17 +83,16 @@ export default (app: Router) => {
     '/apps/:id/reset-secret',
     celebrate({
       params: Joi.object({
-        id: Joi.string().required(),
+        id: Joi.number().required(),
       }),
     }),
-    async (req: Request, res: Response, next: NextFunction) => {
+    async (req: Request<{ id: number }>, res: Response, next: NextFunction) => {
       const logger: Logger = Container.get('logger');
       try {
         const openService = Container.get(OpenService);
         const data = await openService.resetSecret(req.params.id);
         return res.send({ code: 200, data });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
@@ -118,7 +113,6 @@ export default (app: Router) => {
         const result = await openService.authToken(req.query as any);
         return res.send(result);
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },

@@ -1,7 +1,9 @@
 import {
   fileExist,
   getFileContentByName,
+  readDirs,
   getLastModifyFilePath,
+  readDir,
 } from '../config/util';
 import { Router, Request, Response, NextFunction } from 'express';
 import { Container } from 'typedi';
@@ -9,102 +11,69 @@ import { Logger } from 'winston';
 import config from '../config';
 import * as fs from 'fs';
 import { celebrate, Joi } from 'celebrate';
-import path from 'path';
+import path, { join, parse } from 'path';
+import ScriptService from '../services/script';
+import multer from 'multer';
 const route = Router();
 
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, config.scriptPath);
+  },
+  filename: function (req, file, cb) {
+    cb(null, file.originalname);
+  },
+});
+const upload = multer({ storage: storage });
+
 export default (app: Router) => {
-  app.use('/', route);
+  app.use('/scripts', route);
 
-  route.get(
-    '/scripts/files',
-    async (req: Request, res: Response, next: NextFunction) => {
-      const logger: Logger = Container.get('logger');
-      try {
-        const fileList = fs.readdirSync(config.scriptPath, 'utf-8');
-
-        let result = [];
-        for (let i = 0; i < fileList.length; i++) {
-          const fileOrDir = fileList[i];
-          const fPath = path.join(config.scriptPath, fileOrDir);
-          const dirStat = fs.statSync(fPath);
-          if (['node_modules'].includes(fileOrDir)) {
-            continue;
-          }
-
-          if (dirStat.isDirectory()) {
-            const childFileList = fs.readdirSync(fPath, 'utf-8');
-            let children = [];
-            for (let j = 0; j < childFileList.length; j++) {
-              const childFile = childFileList[j];
-              const sPath = path.join(config.scriptPath, fileOrDir, childFile);
-              const _fileExist = await fileExist(sPath);
-              if (_fileExist && fs.statSync(sPath).isFile()) {
-                const statObj = fs.statSync(sPath);
-                children.push({
-                  title: childFile,
-                  value: childFile,
-                  key: `${fileOrDir}-${childFile}`,
-                  mtime: statObj.mtimeMs,
-                  parent: fileOrDir,
-                });
-              }
-            }
-            result.push({
-              title: fileOrDir,
-              value: fileOrDir,
-              key: fileOrDir,
-              mtime: dirStat.mtimeMs,
-              disabled: true,
-              children: children.sort((a, b) => b.mtime - a.mtime),
-            });
-          } else {
-            result.push({
-              title: fileOrDir,
-              value: fileOrDir,
-              key: fileOrDir,
-              mtime: dirStat.mtimeMs,
-            });
-          }
-        }
-
-        res.send({
-          code: 200,
-          data: result,
-        });
-      } catch (e) {
-        logger.error('🔥 error: %o', e);
-        return next(e);
-      }
-    },
-  );
-
-  route.get(
-    '/scripts/:file',
-    async (req: Request, res: Response, next: NextFunction) => {
-      const logger: Logger = Container.get('logger');
-      try {
-        const path = req.query.path ? `${req.query.path}/` : '';
-        const content = getFileContentByName(
-          `${config.scriptPath}${path}${req.params.file}`,
+  route.get('/', async (req: Request, res: Response, next: NextFunction) => {
+    const logger: Logger = Container.get('logger');
+    try {
+      let result = [];
+      const blacklist = ['node_modules', '.git'];
+      if (req.query.path) {
+        const targetPath = path.join(
+          config.scriptPath,
+          req.query.path as string,
         );
+        result = readDir(targetPath, config.scriptPath, blacklist);
+      } else {
+        result = readDirs(config.scriptPath, config.scriptPath, blacklist);
+      }
+      res.send({
+        code: 200,
+        data: result,
+      });
+    } catch (e) {
+      logger.error('🔥 error: %o', e);
+      return next(e);
+    }
+  });
+
+  route.get(
+    '/:file',
+    async (req: Request, res: Response, next: NextFunction) => {
+      const logger: Logger = Container.get('logger');
+      try {
+        const filePath = join(
+          config.scriptPath,
+          req.query.path as string,
+          req.params.file,
+        );
+        const content = getFileContentByName(filePath);
         res.send({ code: 200, data: content });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
   );
 
   route.post(
-    '/scripts',
-    celebrate({
-      body: Joi.object({
-        filename: Joi.string().required(),
-        path: Joi.string().allow(''),
-        content: Joi.string().allow(''),
-        originFilename: Joi.string().allow(''),
-      }),
-    }),
+    '/',
+    upload.single('file'),
     async (req: Request, res: Response, next: NextFunction) => {
       const logger: Logger = Container.get('logger');
       try {
@@ -114,27 +83,34 @@ export default (app: Router) => {
           content: string;
           originFilename: string;
         };
+
         if (!path) {
           path = config.scriptPath;
         }
         if (!path.endsWith('/')) {
           path += '/';
         }
+        if (!path.startsWith('/')) {
+          path = `${config.scriptPath}${path}`;
+        }
         if (config.writePathList.every((x) => !path.startsWith(x))) {
           return res.send({
             code: 430,
-            data: '文件路径禁止访问',
+            message: '文件路径禁止访问',
           });
         }
+
+        if (req.file) {
+          fs.renameSync(req.file.path, join(path, req.file.filename));
+          return res.send({ code: 200 });
+        }
+
         if (!originFilename) {
           originFilename = filename;
         }
         const originFilePath = `${path}${originFilename.replace(/\//g, '')}`;
         const filePath = `${path}${filename.replace(/\//g, '')}`;
         if (fs.existsSync(originFilePath)) {
-          if (!fs.existsSync(config.bakPath)) {
-            fs.mkdirSync(config.bakPath);
-          }
           fs.copyFileSync(
             originFilePath,
             `${config.bakPath}${originFilename.replace(/\//g, '')}`,
@@ -146,18 +122,17 @@ export default (app: Router) => {
         fs.writeFileSync(filePath, content);
         return res.send({ code: 200 });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
   );
 
   route.put(
-    '/scripts',
+    '/',
     celebrate({
       body: Joi.object({
         filename: Joi.string().required(),
-        path: Joi.string().allow(''),
+        path: Joi.string().optional().allow(''),
         content: Joi.string().required(),
       }),
     }),
@@ -169,41 +144,41 @@ export default (app: Router) => {
           content: string;
           path: string;
         };
-        const filePath = `${config.scriptPath}${path}/${filename}`;
+        const filePath = join(config.scriptPath, path, filename);
         fs.writeFileSync(filePath, content);
         return res.send({ code: 200 });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
   );
 
   route.delete(
-    '/scripts',
+    '/',
     celebrate({
       body: Joi.object({
         filename: Joi.string().required(),
+        path: Joi.string().allow(''),
       }),
     }),
     async (req: Request, res: Response, next: NextFunction) => {
       const logger: Logger = Container.get('logger');
       try {
-        let { filename } = req.body as {
+        let { filename, path } = req.body as {
           filename: string;
+          path: string;
         };
-        const filePath = `${config.scriptPath}${filename}`;
+        const filePath = join(config.scriptPath, path, filename);
         fs.unlinkSync(filePath);
         res.send({ code: 200 });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
   );
 
   route.post(
-    '/scripts/download',
+    '/download',
     celebrate({
       body: Joi.object({
         filename: Joi.string().required(),
@@ -227,7 +202,57 @@ export default (app: Router) => {
           return next(err);
         });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
+        return next(e);
+      }
+    },
+  );
+
+  route.put(
+    '/run',
+    celebrate({
+      body: Joi.object({
+        filename: Joi.string().required(),
+        content: Joi.string().optional().allow(''),
+        path: Joi.string().optional().allow(''),
+      }),
+    }),
+    async (req: Request, res: Response, next: NextFunction) => {
+      const logger: Logger = Container.get('logger');
+      try {
+        let { filename, content, path } = req.body;
+        const { name, ext } = parse(filename);
+        const filePath = join(config.scriptPath, path, `${name}.swap${ext}`);
+        fs.writeFileSync(filePath, content || '', { encoding: 'utf8' });
+
+        const scriptService = Container.get(ScriptService);
+        const result = await scriptService.runScript(filePath);
+        res.send(result);
+      } catch (e) {
+        return next(e);
+      }
+    },
+  );
+
+  route.put(
+    '/stop',
+    celebrate({
+      body: Joi.object({
+        filename: Joi.string().required(),
+        content: Joi.string().optional().allow(''),
+        path: Joi.string().optional().allow(''),
+      }),
+    }),
+    async (req: Request, res: Response, next: NextFunction) => {
+      const logger: Logger = Container.get('logger');
+      try {
+        let { filename, content, path } = req.body;
+        const { name, ext } = parse(filename);
+        const filePath = join(config.scriptPath, path, `${name}.swap${ext}`);
+
+        const scriptService = Container.get(ScriptService);
+        const result = await scriptService.stopScript(filePath);
+        res.send(result);
+      } catch (e) {
         return next(e);
       }
     },

@@ -11,6 +11,7 @@ import {
   Menu,
   Typography,
   Input,
+  Popover,
 } from 'antd';
 import {
   ClockCircleOutlined,
@@ -30,24 +31,26 @@ import {
 import config from '@/utils/config';
 import { PageContainer } from '@ant-design/pro-layout';
 import { request } from '@/utils/http';
-import CronModal from './modal';
+import CronModal, { CronLabelModal } from './modal';
 import CronLogModal from './logModal';
+import CronDetailModal from './detail';
 import cron_parser from 'cron-parser';
 import { diffTime } from '@/utils/date';
 import { getTableScroll } from '@/utils/index';
+import { history } from 'umi';
 import './index.less';
 
-const { Text } = Typography;
+const { Text, Paragraph } = Typography;
 const { Search } = Input;
 
-enum CrontabStatus {
+export enum CrontabStatus {
   'running',
   'idle',
   'disabled',
   'queued',
 }
 
-const CrontabSort: any = { 0: 0, 3: 1, 1: 2, 4: 3 };
+const CrontabSort: any = { 0: 0, 5: 1, 3: 2, 1: 3, 4: 4 };
 
 enum OperationName {
   '启用',
@@ -67,25 +70,56 @@ enum OperationPath {
   'unpin',
 }
 
-const Crontab = ({ headerStyle, isPhone }: any) => {
+const Crontab = ({ headerStyle, isPhone, theme }: any) => {
   const columns: any = [
     {
-      title: '任务名',
+      title: '名称',
       dataIndex: 'name',
       key: 'name',
       width: 150,
       align: 'center' as const,
       render: (text: string, record: any) => (
-        <span>
-          {record.name || record._id}{' '}
-          {record.isPinned ? (
-            <span>
-              <PushpinOutlined />
-            </span>
-          ) : (
-            ''
-          )}
-        </span>
+        <>
+          <a
+            onClick={() => {
+              goToScriptManager(record);
+            }}
+          >
+            {record.labels?.length > 0 && record.labels[0] !== '' ? (
+              <Popover
+                placement="right"
+                trigger={isPhone ? 'click' : 'hover'}
+                content={
+                  <div>
+                    {record.labels?.map((label: string) => (
+                      <Tag
+                        color="blue"
+                        style={{ cursor: 'point' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSearchValue(`label:${label}`);
+                        }}
+                      >
+                        <a>{label}</a>
+                      </Tag>
+                    ))}
+                  </div>
+                }
+              >
+                {record.name || '-'}
+              </Popover>
+            ) : (
+              record.name || '-'
+            )}
+            {record.isPinned ? (
+              <span>
+                <PushpinOutlined />
+              </span>
+            ) : (
+              ''
+            )}
+          </a>
+        </>
       ),
       sorter: {
         compare: (a: any, b: any) => a.name.localeCompare(b.name),
@@ -93,23 +127,23 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
       },
     },
     {
-      title: '任务',
+      title: '命令',
       dataIndex: 'command',
       key: 'command',
       width: 250,
       align: 'center' as const,
       render: (text: string, record: any) => {
         return (
-          <span
+          <Paragraph
             style={{
-              textAlign: 'left',
-              width: '100%',
-              display: 'inline-block',
               wordBreak: 'break-all',
+              marginBottom: 0,
+              textAlign: 'left',
             }}
+            ellipsis={{ tooltip: text, rows: 2 }}
           >
             {text}
-          </span>
+          </Paragraph>
         );
       },
       sorter: {
@@ -118,7 +152,7 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
       },
     },
     {
-      title: '任务定时',
+      title: '定时规则',
       dataIndex: 'schedule',
       key: 'schedule',
       width: 110,
@@ -166,18 +200,9 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
         },
       },
       render: (text: string, record: any) => {
-        const language = navigator.language || navigator.languages[0];
-        return (
-          <span
-            style={{
-              display: 'block',
-            }}
-          >
-            {record.last_running_time
-              ? diffTime(record.last_running_time)
-              : '-'}
-          </span>
-        );
+        return record.last_running_time
+          ? diffTime(record.last_running_time)
+          : '-';
       },
     },
     {
@@ -191,19 +216,11 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
       },
       render: (text: string, record: any) => {
         const language = navigator.language || navigator.languages[0];
-        return (
-          <span
-            style={{
-              display: 'block',
-            }}
-          >
-            {record.nextRunTime
-              .toLocaleString(language, {
-                hour12: false,
-              })
-              .replace(' 24:', ' 00:')}
-          </span>
-        );
+        return record.nextRunTime
+          .toLocaleString(language, {
+            hour12: false,
+          })
+          .replace(' 24:', ' 00:');
       },
     },
 
@@ -282,7 +299,8 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
             {record.status === CrontabStatus.idle && (
               <Tooltip title={isPc ? '运行' : ''}>
                 <a
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     runCron(record, index);
                   }}
                 >
@@ -293,7 +311,8 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
             {record.status !== CrontabStatus.idle && (
               <Tooltip title={isPc ? '停止' : ''}>
                 <a
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     stopCron(record, index);
                   }}
                 >
@@ -303,7 +322,8 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
             )}
             <Tooltip title={isPc ? '日志' : ''}>
               <a
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setLogCron({ ...record, timestamp: Date.now() });
                 }}
               >
@@ -320,6 +340,7 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
   const [value, setValue] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isLabelModalVisible, setIsLabelModalVisible] = useState(false);
   const [editedCron, setEditedCron] = useState();
   const [searchText, setSearchText] = useState('');
   const [isLogModalVisible, setIsLogModalVisible] = useState(false);
@@ -328,6 +349,27 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [tableScrollHeight, setTableScrollHeight] = useState<number>();
+  const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
+  const [detailCron, setDetailCron] = useState<any>();
+  const [searchValue, setSearchValue] = useState('');
+
+  const goToScriptManager = (record: any) => {
+    const cmd = record.command.split(' ') as string[];
+    if (cmd[0] === 'task') {
+      if (cmd[1].startsWith('/ql/data/scripts')) {
+        cmd[1] = cmd[1].replace('/ql/data/scripts/', '');
+      }
+
+      let [p, s] = cmd[1].split('/');
+      if (!s) {
+        s = p;
+        p = '';
+      }
+      history.push(`/script?p=${p}&s=${s}`);
+    } else if (cmd[1] === 'repo') {
+      location.href = cmd[2];
+    }
+  };
 
   const getCrons = () => {
     setLoading(true);
@@ -337,14 +379,19 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
         setValue(
           data.data
             .sort((a: any, b: any) => {
-              const sortA = a.isDisabled ? 4 : a.status;
-              const sortB = b.isDisabled ? 4 : b.status;
-              a.isPinned = a.isPinned ? a.isPinned : 0;
-              b.isPinned = b.isPinned ? b.isPinned : 0;
-              if (a.isPinned === b.isPinned) {
-                return CrontabSort[sortA] - CrontabSort[sortB];
-              }
-              return b.isPinned - a.isPinned;
+              const sortA =
+                a.isPinned && a.status !== 0
+                  ? 5
+                  : a.isDisabled && a.status !== 0
+                  ? 4
+                  : a.status;
+              const sortB =
+                b.isPinned && b.status !== 0
+                  ? 5
+                  : b.isDisabled && b.status !== 0
+                  ? 4
+                  : b.status;
+              return CrontabSort[sortA] - CrontabSort[sortB];
             })
             .map((x) => {
               return {
@@ -385,14 +432,16 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
       ),
       onOk() {
         request
-          .delete(`${config.apiPrefix}crons`, { data: [record._id] })
+          .delete(`${config.apiPrefix}crons`, { data: [record.id] })
           .then((data: any) => {
             if (data.code === 200) {
               message.success('删除成功');
               const result = [...value];
-              const i = result.findIndex((x) => x._id === record._id);
-              result.splice(i, 1);
-              setValue(result);
+              const i = result.findIndex((x) => x.id === record.id);
+              if (i !== -1) {
+                result.splice(i, 1);
+                setValue(result);
+              }
             } else {
               message.error(data);
             }
@@ -418,16 +467,18 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
       ),
       onOk() {
         request
-          .put(`${config.apiPrefix}crons/run`, { data: [record._id] })
+          .put(`${config.apiPrefix}crons/run`, { data: [record.id] })
           .then((data: any) => {
             if (data.code === 200) {
               const result = [...value];
-              const i = result.findIndex((x) => x._id === record._id);
-              result.splice(i, 1, {
-                ...record,
-                status: CrontabStatus.running,
-              });
-              setValue(result);
+              const i = result.findIndex((x) => x.id === record.id);
+              if (i !== -1) {
+                result.splice(i, 1, {
+                  ...record,
+                  status: CrontabStatus.running,
+                });
+                setValue(result);
+              }
             } else {
               message.error(data);
             }
@@ -453,17 +504,19 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
       ),
       onOk() {
         request
-          .put(`${config.apiPrefix}crons/stop`, { data: [record._id] })
+          .put(`${config.apiPrefix}crons/stop`, { data: [record.id] })
           .then((data: any) => {
             if (data.code === 200) {
               const result = [...value];
-              const i = result.findIndex((x) => x._id === record._id);
-              result.splice(i, 1, {
-                ...record,
-                pid: null,
-                status: CrontabStatus.idle,
-              });
-              setValue(result);
+              const i = result.findIndex((x) => x.id === record.id);
+              if (i !== -1) {
+                result.splice(i, 1, {
+                  ...record,
+                  pid: null,
+                  status: CrontabStatus.idle,
+                });
+                setValue(result);
+              }
             } else {
               message.error(data);
             }
@@ -495,19 +548,21 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
               record.isDisabled === 1 ? 'enable' : 'disable'
             }`,
             {
-              data: [record._id],
+              data: [record.id],
             },
           )
           .then((data: any) => {
             if (data.code === 200) {
               const newStatus = record.isDisabled === 1 ? 0 : 1;
               const result = [...value];
-              const i = result.findIndex((x) => x._id === record._id);
-              result.splice(i, 1, {
-                ...record,
-                isDisabled: newStatus,
-              });
-              setValue(result);
+              const i = result.findIndex((x) => x.id === record.id);
+              if (i !== -1) {
+                result.splice(i, 1, {
+                  ...record,
+                  isDisabled: newStatus,
+                });
+                setValue(result);
+              }
             } else {
               message.error(data);
             }
@@ -539,19 +594,21 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
               record.isPinned === 1 ? 'unpin' : 'pin'
             }`,
             {
-              data: [record._id],
+              data: [record.id],
             },
           )
           .then((data: any) => {
             if (data.code === 200) {
               const newStatus = record.isPinned === 1 ? 0 : 1;
               const result = [...value];
-              const i = result.findIndex((x) => x._id === record._id);
-              result.splice(i, 1, {
-                ...record,
-                isPinned: newStatus,
-              });
-              setValue(result);
+              const i = result.findIndex((x) => x.id === record.id);
+              if (i !== -1) {
+                result.splice(i, 1, {
+                  ...record,
+                  isPinned: newStatus,
+                });
+                setValue(result);
+              }
             } else {
               message.error(data);
             }
@@ -563,45 +620,43 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
     });
   };
 
+  const getMenuItems = (record: any) => {
+    return [
+      { label: '编辑', key: 'edit', icon: <EditOutlined /> },
+      {
+        label: record.isDisabled === 1 ? '启用' : '禁用',
+        key: 'enableOrDisable',
+        icon:
+          record.isDisabled === 1 ? <CheckCircleOutlined /> : <StopOutlined />,
+      },
+      { label: '删除', key: 'delete', icon: <DeleteOutlined /> },
+      {
+        label: record.isPinned === 1 ? '取消置顶' : '置顶',
+        key: 'pinOrUnPin',
+        icon: record.isPinned === 1 ? <StopOutlined /> : <PushpinOutlined />,
+      },
+    ];
+  };
+
   const MoreBtn: React.FC<{
     record: any;
     index: number;
   }> = ({ record, index }) => (
     <Dropdown
-      arrow
+      arrow={{ pointAtCenter: true }}
+      placement="bottomRight"
       trigger={['click']}
       overlay={
-        <Menu onClick={({ key }) => action(key, record, index)}>
-          <Menu.Item key="edit" icon={<EditOutlined />}>
-            编辑
-          </Menu.Item>
-          <Menu.Item
-            key="enableOrDisable"
-            icon={
-              record.isDisabled === 1 ? (
-                <CheckCircleOutlined />
-              ) : (
-                <StopOutlined />
-              )
-            }
-          >
-            {record.isDisabled === 1 ? '启用' : '禁用'}
-          </Menu.Item>
-          <Menu.Item key="delete" icon={<DeleteOutlined />}>
-            删除
-          </Menu.Item>
-          <Menu.Item
-            key="pinOrUnPin"
-            icon={
-              record.isPinned === 1 ? <StopOutlined /> : <PushpinOutlined />
-            }
-          >
-            {record.isPinned === 1 ? '取消置顶' : '置顶'}
-          </Menu.Item>
-        </Menu>
+        <Menu
+          items={getMenuItems(record)}
+          onClick={({ key, domEvent }) => {
+            domEvent.stopPropagation();
+            action(key, record, index);
+          }}
+        />
       }
     >
-      <a>
+      <a onClick={(e) => e.stopPropagation()}>
         <EllipsisOutlined />
       </a>
     </Dropdown>
@@ -638,7 +693,7 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
   };
 
   const handleCrons = (cron: any) => {
-    const index = value.findIndex((x) => x._id === cron._id);
+    const index = value.findIndex((x) => x.id === cron.id);
     const result = [...value];
     cron.nextRunTime = cron_parser
       .parseExpression(cron.schedule)
@@ -656,19 +711,21 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
 
   const getCronDetail = (cron: any) => {
     request
-      .get(`${config.apiPrefix}crons/${cron._id}`)
+      .get(`${config.apiPrefix}crons/${cron.id}`)
       .then((data: any) => {
-        const index = value.findIndex((x) => x._id === cron._id);
+        const index = value.findIndex((x) => x.id === cron.id);
         const result = [...value];
         data.data.nextRunTime = cron_parser
           .parseExpression(data.data.schedule)
           .next()
           .toDate();
-        result.splice(index, 1, {
-          ...cron,
-          ...data.data,
-        });
-        setValue(result);
+        if (index !== -1) {
+          result.splice(index, 1, {
+            ...cron,
+            ...data.data,
+          });
+          setValue(result);
+        }
       })
       .finally(() => setLoading(false));
   };
@@ -746,12 +803,12 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
   };
 
   const getRowClassName = (record: any, index: number) => {
-    return record.isPinned ? 'pinned-cron' : '';
+    return record.isPinned ? 'pinned-cron cron' : 'cron';
   };
 
   useEffect(() => {
     if (logCron) {
-      localStorage.setItem('logCron', logCron._id);
+      localStorage.setItem('logCron', logCron.id);
       setIsLogModalVisible(true);
     }
   }, [logCron]);
@@ -776,11 +833,14 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
           placeholder="请输入名称或者关键词"
           style={{ width: 'auto' }}
           enterButton
+          allowClear
           loading={loading}
+          value={searchValue}
+          onChange={(e) => setSearchValue(e.target.value)}
           onSearch={onSearch}
         />,
         <Button key="2" type="primary" onClick={() => addCron()}>
-          添加任务
+          新建任务
         </Button>,
       ]}
       header={{
@@ -830,6 +890,13 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
           >
             批量取消置顶
           </Button>
+          <Button
+            type="primary"
+            onClick={() => setIsLabelModalVisible(true)}
+            style={{ marginLeft: 8, marginRight: 8 }}
+          >
+            批量修改标签
+          </Button>
           <span style={{ marginLeft: 8 }}>
             已选择
             <a>{selectedRowIds?.length}</a>项
@@ -847,9 +914,18 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
           defaultPageSize: 20,
           showTotal: (total: number, range: number[]) =>
             `第 ${range[0]}-${range[1]} 条/总共 ${total} 条`,
+          pageSizeOptions: [20, 100, 500, 1000] as any,
+        }}
+        onRow={(record) => {
+          return {
+            onClick: (event) => {
+              setDetailCron(record);
+              setIsDetailModalVisible(true);
+            },
+          };
         }}
         dataSource={value}
-        rowKey="_id"
+        rowKey="id"
         size="middle"
         scroll={{ x: 1000, y: tableScrollHeight }}
         loading={loading}
@@ -868,6 +944,25 @@ const Crontab = ({ headerStyle, isPhone }: any) => {
         visible={isModalVisible}
         handleCancel={handleCancel}
         cron={editedCron}
+      />
+      <CronLabelModal
+        visible={isLabelModalVisible}
+        handleCancel={(needUpdate?: boolean) => {
+          setIsLabelModalVisible(false);
+          if (needUpdate) {
+            getCrons();
+          }
+        }}
+        ids={selectedRowIds}
+      />
+      <CronDetailModal
+        visible={isDetailModalVisible}
+        handleCancel={() => {
+          setIsDetailModalVisible(false);
+        }}
+        cron={detailCron}
+        theme={theme}
+        isPhone={isPhone}
       />
     </PageContainer>
   );

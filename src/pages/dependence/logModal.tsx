@@ -7,6 +7,7 @@ import {
   CheckCircleOutlined,
 } from '@ant-design/icons';
 import { PageLoading } from '@ant-design/pro-layout';
+import Ansi from 'ansi-to-react';
 
 const DependenceLogModal = ({
   dependence,
@@ -46,10 +47,10 @@ const DependenceLogModal = ({
   const getDependenceLog = () => {
     setLoading(true);
     request
-      .get(`${config.apiPrefix}dependencies/${dependence._id}`)
+      .get(`${config.apiPrefix}dependencies/${dependence.id}`)
       .then((data: any) => {
-        if (localStorage.getItem('logDependence') === dependence._id) {
-          const log = (data.data.log || []).join('\n') as string;
+        if (localStorage.getItem('logDependence') === String(dependence.id)) {
+          const log = (data.data.log || []).join('') as string;
           setValue(log);
           setExecuting(!log.includes('结束时间'));
           setIsRemoveFailed(log.includes('删除失败'));
@@ -64,7 +65,7 @@ const DependenceLogModal = ({
     setRemoveLoading(true);
     request
       .delete(`${config.apiPrefix}dependencies/force`, {
-        data: [dependence._id],
+        data: [dependence.id],
       })
       .then((data: any) => {
         cancel(true);
@@ -89,17 +90,19 @@ const DependenceLogModal = ({
   }, [dependence]);
 
   useEffect(() => {
-    if (!socketMessage) return;
+    if (!socketMessage || !dependence) return;
     const { type, message, references } = socketMessage;
     if (
       type === 'installDependence' &&
-      message.includes('结束时间') &&
-      references.length > 0
+      references.length > 0 &&
+      references.includes(dependence.id)
     ) {
-      setExecuting(false);
-      setIsRemoveFailed(message.includes('删除失败'));
+      if (message.includes('结束时间')) {
+        setExecuting(false);
+        setIsRemoveFailed(message.includes('删除失败'));
+      }
+      setValue(`${value}${message}`);
     }
-    setValue(`${value} \n ${message}`);
   }, [socketMessage]);
 
   useEffect(() => {
@@ -140,7 +143,7 @@ const DependenceLogModal = ({
               : {}
           }
         >
-          {value}
+          <Ansi>{value}</Ansi>
         </pre>
       )}
     </Modal>

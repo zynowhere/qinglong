@@ -18,7 +18,7 @@ import { MobileOutlined } from '@ant-design/icons';
 const FormItem = Form.Item;
 const { Countdown } = Statistic;
 
-const Login = () => {
+const Login = ({ reloadUser }: any) => {
   const [loading, setLoading] = useState(false);
   const [waitTime, setWaitTime] = useState<any>();
   const { theme } = useTheme();
@@ -31,7 +31,7 @@ const Login = () => {
     setTwoFactor(false);
     setWaitTime(null);
     request
-      .post(`${config.apiPrefix}login`, {
+      .post(`${config.apiPrefix}user/login`, {
         data: {
           username: values.username,
           password: values.password,
@@ -100,8 +100,8 @@ const Login = () => {
             <div>上次登录状态：{retries > 0 ? `失败${retries}次` : '成功'}</div>
           </>
         ),
-        duration: 5,
       });
+      reloadUser(true);
       history.push('/crontab');
     } else if (data.code === 100) {
       message.warn(data.message);
@@ -110,6 +110,14 @@ const Login = () => {
       setWaitTime(data.data);
     } else {
       message.error(data.message);
+    }
+  };
+
+  const codeInputChange = (e: React.ChangeEvent) => {
+    const { value } = e.target as any;
+    const regx = /^[0-9]{6}$/;
+    if (regx.test(value)) {
+      completeTowFactor({ code: value });
     }
   };
 
@@ -124,7 +132,11 @@ const Login = () => {
     <div className={styles.container}>
       <div className={styles.top}>
         <div className={styles.header}>
-          <img alt="logo" className={styles.logo} src="/images/qinglong.png" />
+          <img
+            alt="logo"
+            className={styles.logo}
+            src="http://qn.whyour.cn/logo.png"
+          />
           <span className={styles.title}>
             {twoFactor ? '两步验证' : config.siteName}
           </span>
@@ -140,12 +152,15 @@ const Login = () => {
                 {
                   pattern: /^[0-9]{6}$/,
                   message: '验证码为6位数字',
-                  validateTrigger: 'onBlur',
                 },
               ]}
-              hasFeedback
             >
-              <Input placeholder="6位数字" autoFocus autoComplete="off" />
+              <Input
+                placeholder="6位数字"
+                onChange={codeInputChange}
+                autoFocus
+                autoComplete="off"
+              />
             </FormItem>
             <Button
               type="primary"

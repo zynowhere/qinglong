@@ -20,10 +20,14 @@ const CronLogModal = ({
   cron,
   handleCancel,
   visible,
+  data,
+  logUrl,
 }: {
   cron?: any;
   visible: boolean;
   handleCancel: () => void;
+  data?: string;
+  logUrl?: string;
 }) => {
   const [value, setValue] = useState<string>('启动中...');
   const [loading, setLoading] = useState<any>(true);
@@ -36,9 +40,9 @@ const CronLogModal = ({
       setLoading(true);
     }
     request
-      .get(`${config.apiPrefix}crons/${cron._id}/log`)
+      .get(logUrl ? logUrl : `${config.apiPrefix}crons/${cron.id}/log`)
       .then((data: any) => {
-        if (localStorage.getItem('logCron') === cron._id) {
+        if (localStorage.getItem('logCron') === String(cron.id)) {
           const log = data.data as string;
           setValue(log || '暂无日志');
           setExecuting(
@@ -61,7 +65,7 @@ const CronLogModal = ({
                   <Countdown
                     className="inline-countdown"
                     format="ss"
-                    value={Date.now() + 1000 * 10}
+                    value={Date.now() + 1000 * 30}
                   />
                   秒后自动刷新
                 </span>
@@ -70,7 +74,7 @@ const CronLogModal = ({
             });
             setTimeout(() => {
               window.location.reload();
-            }, 10000);
+            }, 30000);
           }
         }
       })
@@ -90,17 +94,23 @@ const CronLogModal = ({
     return (
       <>
         {(executing || loading) && <Loading3QuartersOutlined spin />}
-        {!executing && <CheckCircleOutlined />}
-        <span style={{ marginLeft: 5 }}>日志-{cron && cron.name}</span>{' '}
+        {!executing && !loading && <CheckCircleOutlined />}
+        <span style={{ marginLeft: 5 }}>{cron && cron.name}</span>
       </>
     );
   };
 
   useEffect(() => {
-    if (cron) {
+    if (cron && cron.id && visible) {
       getCronLog(true);
     }
-  }, [cron]);
+  }, [cron, visible]);
+
+  useEffect(() => {
+    if (data) {
+      setValue(data);
+    }
+  }, [data]);
 
   useEffect(() => {
     setIsPhone(document.body.clientWidth < 768);
@@ -113,8 +123,6 @@ const CronLogModal = ({
       centered
       className="log-modal"
       bodyStyle={{
-        overflowY: 'auto',
-        maxHeight: 'calc(80vh - var(--vh-offset, 0px))',
         minHeight: '300px',
       }}
       forceRender

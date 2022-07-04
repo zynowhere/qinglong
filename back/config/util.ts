@@ -107,7 +107,7 @@ export function createRandomString(min: number, max: number): string {
     newArr.push(arr.splice(Math.random() * arr.length, 1)[0]);
   }
 
-  function getOne(arr) {
+  function getOne(arr: any[]) {
     return arr[Math.floor(Math.random() * arr.length)];
   }
 
@@ -230,4 +230,105 @@ export async function fileExist(file: any) {
       resolve(false);
     }
   });
+}
+
+export async function createFile(file: string, data: string = '') {
+  return new Promise((resolve) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, data);
+    resolve(true);
+  });
+}
+
+export async function concurrentRun(
+  fnList: Array<() => Promise<any>> = [],
+  max = 5,
+) {
+  if (!fnList.length) return;
+
+  const replyList: any[] = []; // 收集任务执行结果
+  const startTime = new Date().getTime(); // 记录任务执行开始时间
+
+  // 任务执行程序
+  const schedule = async (index: number) => {
+    return new Promise(async (resolve) => {
+      const fn = fnList[index];
+      if (!fn) return resolve(null);
+
+      // 执行当前异步任务
+      const reply = await fn();
+      replyList[index] = reply;
+
+      // 执行完当前任务后，继续执行任务池的剩余任务
+      await schedule(index + max);
+      resolve(null);
+    });
+  };
+
+  // 任务池执行程序
+  const scheduleList = new Array(max)
+    .fill(0)
+    .map((_, index) => schedule(index));
+
+  // 使用 Promise.all 批量执行
+  const r = await Promise.all(scheduleList);
+  const cost = (new Date().getTime() - startTime) / 1000;
+
+  return replyList;
+}
+
+export function readDirs(
+  dir: string,
+  baseDir: string = '',
+  blacklist: string[] = [],
+) {
+  const relativePath = path.relative(baseDir, dir);
+  const files = fs.readdirSync(dir);
+  const result: any = files
+    .filter((x) => !blacklist.includes(x))
+    .map((file: string) => {
+      const subPath = path.join(dir, file);
+      const stats = fs.statSync(subPath);
+      const key = path.join(relativePath, file);
+      if (stats.isDirectory()) {
+        return {
+          title: file,
+          key,
+          type: 'directory',
+          disabled: true,
+          parent: relativePath,
+          children: readDirs(subPath, baseDir),
+        };
+      }
+      return {
+        title: file,
+        type: 'file',
+        key,
+        parent: relativePath,
+      };
+    });
+  return result;
+}
+
+export function readDir(
+  dir: string,
+  baseDir: string = '',
+  blacklist: string[] = [],
+) {
+  const relativePath = path.relative(baseDir, dir);
+  const files = fs.readdirSync(dir);
+  const result: any = files
+    .filter((x) => !blacklist.includes(x))
+    .map((file: string) => {
+      const subPath = path.join(dir, file);
+      const stats = fs.statSync(subPath);
+      const key = path.join(relativePath, file);
+      return {
+        title: file,
+        type: stats.isDirectory() ? 'directory' : 'file',
+        key,
+        parent: relativePath,
+      };
+    });
+  return result;
 }

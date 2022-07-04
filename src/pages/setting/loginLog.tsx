@@ -21,7 +21,7 @@ const columns = [
     align: 'center' as const,
     width: 50,
     render: (text: string, record: any, index: number) => {
-      return <span style={{ cursor: 'text' }}>{index + 1} </span>;
+      return index + 1;
     },
   },
   {
@@ -30,7 +30,7 @@ const columns = [
     key: 'timestamp',
     align: 'center' as const,
     render: (text: string, record: any) => {
-      return <span>{new Date(record.timestamp).toLocaleString()}</span>;
+      return new Date(record.timestamp).toLocaleString();
     },
   },
   {
@@ -73,7 +73,7 @@ const LoginLog = ({ data }: any) => {
         columns={columns}
         pagination={false}
         dataSource={data}
-        rowKey="_id"
+        rowKey="id"
         size="middle"
         scroll={{ x: 768 }}
       />

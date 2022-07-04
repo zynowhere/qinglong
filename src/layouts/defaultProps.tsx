@@ -9,6 +9,7 @@ import {
   ControlOutlined,
   ContainerOutlined,
 } from '@ant-design/icons';
+import IconFont from '@/components/iconfont';
 
 export default {
   route: {
@@ -26,45 +27,57 @@ export default {
         component: '@/pages/initialization/index',
       },
       {
+        name: '错误',
+        path: '/error',
+        hideInMenu: true,
+        component: '@/pages/error/index',
+      },
+      {
         path: '/crontab',
         name: '定时任务',
-        icon: <FieldTimeOutlined />,
+        icon: <IconFont type="ql-icon-crontab" />,
         component: '@/pages/crontab/index',
+      },
+      {
+        path: '/subscription',
+        name: '订阅管理',
+        icon: <IconFont type="ql-icon-subs" />,
+        component: '@/pages/subscription/index',
       },
       {
         path: '/env',
         name: '环境变量',
-        icon: <RadiusSettingOutlined />,
+        icon: <IconFont type="ql-icon-env" />,
         component: '@/pages/env/index',
       },
       {
         path: '/config',
         name: '配置文件',
-        icon: <ControlOutlined />,
+        icon: <IconFont type="ql-icon-config" />,
         component: '@/pages/config/index',
       },
       {
         path: '/script',
         name: '脚本管理',
-        icon: <FormOutlined />,
+        icon: <IconFont type="ql-icon-script" />,
         component: '@/pages/script/index',
       },
       {
         path: '/dependence',
         name: '依赖管理',
-        icon: <ContainerOutlined />,
+        icon: <IconFont type="ql-icon-dependence" />,
         component: '@/pages/dependence/index',
       },
       {
         path: '/diff',
         name: '对比工具',
-        icon: <DiffOutlined />,
+        icon: <IconFont type="ql-icon-diff" />,
         component: '@/pages/diff/index',
       },
       {
         path: '/log',
         name: '任务日志',
-        icon: <FolderOutlined />,
+        icon: <IconFont type="ql-icon-log" />,
         component: '@/pages/log/index',
       },
       {
@@ -79,6 +92,5 @@ export default {
   fixSiderbar: true,
   contentWidth: 'Fixed',
   splitMenus: false,
-  logo: '/images/qinglong.png',
   siderWidth: 180,
 } as any;

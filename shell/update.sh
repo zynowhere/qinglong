@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-dir_shell=/ql/shell
+dir_shell=$QL_DIR/shell
 . $dir_shell/share.sh
 . $dir_shell/api.sh
 
@@ -43,7 +43,7 @@ detect_config_version() {
             local notify_title="配置文件更新通知"
             local notify_content="更新日期: $update_date\n用户版本: $ver_config_user\n新的版本: $ver_config_sample\n更新内容: $update_content\n更新说明: 如需使用新功能请对照config.sample.sh，将相关新参数手动增加到你自己的config.sh中，否则请无视本消息。本消息只在该新版本配置文件更新当天发送一次。\n"
             echo -e $notify_content
-            notify "$notify_title" "$notify_content"
+            notify_api "$notify_title" "$notify_content"
             [[ $? -eq 0 ]] && echo $ver_config_sample >$send_mark
         fi
     else
@@ -91,7 +91,7 @@ del_cron() {
     done
     if [[ $ids ]]; then
         result=$(del_cron_api "$ids")
-        notify "$path 删除任务${result}" "$detail"
+        notify_api "$path 删除任务${result}" "$detail"
     fi
 }
 
@@ -131,7 +131,7 @@ add_cron() {
             fi
         fi
     done
-    notify "$path 新增任务" "$detail"
+    notify_api "$path 新增任务" "$detail"
 }
 
 ## 更新仓库
@@ -141,6 +141,7 @@ update_repo() {
     local blackword="$3"
     local dependence="$4"
     local branch="$5"
+    local extensions="$6"
     local tmp="${url%/*}"
     local authorTmp1="${tmp##*/}"
     local authorTmp2="${authorTmp1##*:}"
@@ -151,11 +152,6 @@ update_repo() {
     make_dir "${dir_scripts}/${uniq_path}"
 
     local formatUrl="$url"
-    if [[ $github_proxy_url ]]; then
-        if [[ $url =~ "github.com" ]] || [[ $url =~ "githubusercontent.com" ]]; then
-            [[ ! $url =~ "https://ghproxy.com" ]] && formatUrl="${github_proxy_url}${url}"
-        fi
-    fi
     if [[ -d ${repo_path}/.git ]]; then
         reset_romote_url ${repo_path} "${formatUrl}" "${branch}"
         git_pull_scripts ${repo_path} "${branch}"
@@ -164,17 +160,9 @@ update_repo() {
     fi
     if [[ $exit_status -eq 0 ]]; then
         echo -e "\n更新${repo_path}成功...\n"
-        diff_scripts "$repo_path" "$author" "$path" "$blackword" "$dependence"
+        diff_scripts "$repo_path" "$author" "$path" "$blackword" "$dependence" "$extensions"
     else
-        echo -e "\n更新${repo_path}失败，重新下载全新仓库...\n"
-        rm -rf ${repo_path}
-        git_clone_scripts "${formatUrl}" ${repo_path} "${branch}"
-        if [[ $exit_status -eq 0 ]]; then
-            echo -e "\n更新${repo_path}成功...\n"
-            diff_scripts "$repo_path" "$author" "$path" "$blackword" "$dependence"
-        else
-            echo -e "\n更新${repo_path}失败，请检查网络...\n"
-        fi
+        echo -e "\n更新${repo_path}失败，请检查网络...\n"
     fi
 }
 
@@ -183,15 +171,14 @@ update_raw() {
     echo -e "--------------------------------------------------------------\n"
     local url="$1"
     local raw_url="$url"
-    if [[ $github_proxy_url ]]; then
-        if [[ $url =~ "github.com" ]] || [[ $url =~ "githubusercontent.com" ]]; then
-            [[ ! $url =~ "https://ghproxy.com" ]] && raw_url="${github_proxy_url}${url}"
-        fi
-    fi
     local suffix="${raw_url##*.}"
     local raw_file_name="${uniq_path}.${suffix}"
     echo -e "开始下载：${raw_url} \n\n保存路径：$dir_raw/${raw_file_name}\n"
+
+    set_proxy
     wget -q --no-check-certificate -O "$dir_raw/${raw_file_name}.new" ${raw_url}
+    unset_proxy
+
     if [[ $? -eq 0 ]]; then
         mv "$dir_raw/${raw_file_name}.new" "$dir_raw/${raw_file_name}"
         echo -e "下载 ${raw_file_name} 成功...\n"
@@ -217,7 +204,7 @@ update_raw() {
         if [[ -z $cron_id ]]; then
             result=$(add_cron_api "$cron_line:$cmd_task $filename:$cron_name")
             echo -e "$result\n"
-            notify "新增任务通知" "\n$result"
+            notify_api "新增任务通知" "\n$result"
             # update_cron_api "$cron_line:$cmd_task $filename:$cron_name:$cron_id"
         fi
     else
@@ -242,15 +229,15 @@ run_extra_shell() {
 ## 脚本用法
 usage() {
     echo -e "本脚本用法："
-    echo -e "1. $cmd_update update                                                    # 更新并重启青龙"
-    echo -e "2. $cmd_update extra                                                     # 运行自定义脚本"
-    echo -e "3. $cmd_update raw <fileurl>                                             # 更新单个脚本文件"
-    echo -e "4. $cmd_update repo <repourl> <path> <blacklist> <dependence> <branch>   # 更新单个仓库的脚本"
-    echo -e "5. $cmd_update rmlog <days>                                              # 删除旧日志"
-    echo -e "6. $cmd_update bot                                                       # 启动tg-bot"
-    echo -e "7. $cmd_update check                                                     # 检测青龙环境并修复"
-    echo -e "8. $cmd_update resetlet                                                  # 重置登录错误次数"
-    echo -e "9. $cmd_update resettfa                                                  # 禁用两步登录"
+    echo -e "1. $cmd_update update                                                                  # 更新并重启青龙"
+    echo -e "2. $cmd_update extra                                                                   # 运行自定义脚本"
+    echo -e "3. $cmd_update raw <fileurl>                                                           # 更新单个脚本文件"
+    echo -e "4. $cmd_update repo <repourl> <path> <blacklist> <dependence> <branch> <extensions>    # 更新单个仓库的脚本"
+    echo -e "5. $cmd_update rmlog <days>                                                            # 删除旧日志"
+    echo -e "6. $cmd_update bot                                                                     # 启动tg-bot"
+    echo -e "7. $cmd_update check                                                                   # 检测青龙环境并修复"
+    echo -e "8. $cmd_update resetlet                                                                # 重置登录错误次数"
+    echo -e "9. $cmd_update resettfa                                                                # 禁用两步登录"
 }
 
 ## 更新qinglong
@@ -258,12 +245,17 @@ update_qinglong() {
     patch_version
 
     local no_restart="$1"
+    local all_branch=$(git branch -a)
+    local primary_branch="master"
+    if [[ "${all_branch}" =~ "${current_branch}" ]]; then
+        primary_branch="${current_branch}"
+    fi
     [[ -f $dir_root/package.json ]] && ql_depend_old=$(cat $dir_root/package.json)
-    reset_romote_url ${dir_root} "${github_proxy_url}https://github.com/whyour/qinglong.git" "master"
-    git_pull_scripts $dir_root "master"
+    reset_romote_url ${dir_root} "https://github.com/whyour/qinglong.git" ${primary_branch}
+    git_pull_scripts $dir_root ${primary_branch}
 
     if [[ $exit_status -eq 0 ]]; then
-        echo -e "\n更新$dir_root成功...\n"
+        echo -e "\n更新青龙源文件成功...\n"
         cp -f $file_config_sample $dir_config/config.sample.sh
         detect_config_version
         update_depend
@@ -271,23 +263,23 @@ update_qinglong() {
         [[ -f $dir_root/package.json ]] && ql_depend_new=$(cat $dir_root/package.json)
         [[ "$ql_depend_old" != "$ql_depend_new" ]] && npm_install_2 $dir_root
     else
-        echo -e "\n更新$dir_root失败，请检查原因...\n"
+        echo -e "\n更新青龙源文件失败，请检查原因...\n"
     fi
 
-    local url="${github_proxy_url}https://github.com/whyour/qinglong-static.git"
+    local url="https://github.com/whyour/qinglong-static.git"
     if [[ -d ${ql_static_repo}/.git ]]; then
-        reset_romote_url ${ql_static_repo} ${url} "master"
-        git_pull_scripts ${ql_static_repo} "master"
+        reset_romote_url ${ql_static_repo} ${url} ${primary_branch}
+        git_pull_scripts ${ql_static_repo} ${primary_branch}
     else
-        git_clone_scripts ${url} ${ql_static_repo}
+        git_clone_scripts ${url} ${ql_static_repo} ${primary_branch}
     fi
     if [[ $exit_status -eq 0 ]]; then
-        echo -e "\n更新$ql_static_repo成功...\n"
-        local static_version=$(cat /ql/src/version.ts | perl -pe "s|.*\'(.*)\';\.*|\1|" | head -1)
+        echo -e "\n更新青龙静态资源成功...\n"
+        local static_version=$(cat $dir_root/src/version.ts | perl -pe "s|.*\'(.*)\';\.*|\1|" | head -1)
         echo -e "\n当前版本 $static_version...\n"
-        cd $dir_root
-        rm -rf $dir_root/build && rm -rf $dir_root/dist
-        cp -rf $ql_static_repo/* $dir_root
+        
+        rm -rf $dir_static/*
+        cp -rf $ql_static_repo/* $dir_static
         if [[ $no_restart != "no-restart" ]]; then
             nginx -s reload 2>/dev/null || nginx -c /etc/nginx/nginx.conf
             echo -e "重启面板中..."
@@ -295,16 +287,16 @@ update_qinglong() {
             reload_pm2
         fi
     else
-        echo -e "\n更新$dir_root失败，请检查原因...\n"
+        echo -e "\n更新青龙静态资源失败，请检查原因...\n"
     fi
 
 }
 
 patch_version() {
-    if [[ -f "/ql/db/cookie.db" ]]; then
+    if [[ -f "$dir_root/db/cookie.db" ]]; then
         echo -e "检测到旧的db文件，拷贝为新db...\n"
-        mv /ql/db/cookie.db /ql/db/env.db
-        rm -rf /ql/db/cookie.db
+        mv $dir_root/db/cookie.db $dir_root/db/env.db
+        rm -rf $dir_root/db/cookie.db
         echo
     fi
 
@@ -312,23 +304,38 @@ patch_version() {
         pnpm i -g ts-node typescript tslib
     fi
 
+    # 兼容pnpm@7 
+    pnpm setup
+    source ~/.bashrc
+
     git config --global pull.rebase false
-}
 
-reload_pm2() {
-    pm2 l &>/dev/null
+    cp -f $dir_root/.env.example $dir_root/.env
 
-    if [[ $(pm2 info panel 2>/dev/null) ]]; then
-        pm2 reload panel --source-map-support --time &>/dev/null
-    else
-        pm2 start $dir_root/build/app.js -n panel --source-map-support --time &>/dev/null
+    if [[ -d "$dir_root/db" ]]; then
+        echo -e "检测到旧的db目录，拷贝到data目录...\n"
+        cp -rf $dir_root/config $dir_root/data
+        echo
     fi
 
-    if [[ $(pm2 info schedule 2>/dev/null) ]]; then
-        pm2 reload schedule --source-map-support --time &>/dev/null
-    else
-        pm2 start $dir_root/build/schedule.js -n schedule --source-map-support --time &>/dev/null
+    if [[ -d "$dir_root/scripts" ]]; then
+        echo -e "检测到旧的scripts目录，拷贝到data目录...\n"
+        cp -rf $dir_root/scripts $dir_root/data
+        echo
     fi
+
+    if [[ -d "$dir_root/log" ]]; then
+        echo -e "检测到旧的log目录，拷贝到data目录...\n"
+        cp -rf $dir_root/log $dir_root/data
+        echo
+    fi
+
+    if [[ -d "$dir_root/config" ]]; then
+        echo -e "检测到旧的config目录，拷贝到data目录...\n"
+        cp -rf $dir_root/config $dir_root/data
+        echo
+    fi
+
 }
 
 ## 对比脚本
@@ -339,8 +346,9 @@ diff_scripts() {
     local path="$3"
     local blackword="$4"
     local dependence="$5"
+    local extensions="$6"
 
-    gen_list_repo "$repo_path" "$author" "$path" "$blackword" "$dependence"
+    gen_list_repo "$repo_path" "$author" "$path" "$blackword" "$dependence" "$extensions"
 
     local list_add="$dir_list_tmp/${uniq_path}_add.list"
     local list_drop="$dir_list_tmp/${uniq_path}_drop.list"
@@ -376,6 +384,9 @@ gen_list_repo() {
 
     local cmd="find ."
     local index=0
+    if [[ $6 ]]; then
+        file_extensions="$6"
+    fi
     for extension in $file_extensions; do
         if [[ $index -eq 0 ]]; then
             cmd="${cmd} -name \"*.${extension}\""
@@ -406,7 +417,7 @@ gen_list_repo() {
     fi
     
     if [[ -d $dir_dep ]]; then
-        cp $dir_dep/* "${dir_scripts}/${uniq_path}" &>/dev/null
+        cp -rf $dir_dep/* "${dir_scripts}/${uniq_path}" &>/dev/null
     fi
 
     for file in ${files}; do
@@ -456,6 +467,7 @@ main() {
     local p4=$4
     local p5=$5
     local p6=$6
+    local p7=$7
     local log_time=$(date "+%Y-%m-%d-%H-%M-%S")
     local log_path="$dir_log/update/${log_time}_$p1.log"
     local begin_time=$(date '+%Y-%m-%d %H:%M:%S')
@@ -476,11 +488,8 @@ main() {
     repo)
         get_user_info
         get_uniq_path "$p2" "$p6"
-        log_path="$dir_log/update/${log_time}_${uniq_path}.log"
-        echo -e "## 开始执行... $begin_time\n" >>$log_path
-        [[ -f $task_error_log_path ]] && cat $task_error_log_path >>$log_path
         if [[ -n $p2 ]]; then
-            update_repo "$p2" "$p3" "$p4" "$p5" "$p6" >>$log_path
+            update_repo "$p2" "$p3" "$p4" "$p5" "$p6" "$p7"
         else
             echo -e "命令输入错误...\n"
             usage
@@ -489,11 +498,8 @@ main() {
     raw)
         get_user_info
         get_uniq_path "$p2"
-        log_path="$dir_log/update/${log_time}_${uniq_path}.log"
-        echo -e "## 开始执行... $begin_time\n" >>$log_path
-        [[ -f $task_error_log_path ]] && cat $task_error_log_path >>$log_path
         if [[ -n $p2 ]]; then
-            update_raw "$p2" >>$log_path
+            update_raw "$p2"
         else
             echo -e "命令输入错误...\n"
             usage
@@ -533,8 +539,10 @@ main() {
     esac
     local end_time=$(date '+%Y-%m-%d %H:%M:%S')
     local diff_time=$(($(date +%s -d "$end_time") - $(date +%s -d "$begin_time")))
-    echo -e "\n## 执行结束... $end_time  耗时 $diff_time 秒" >>$log_path
-    cat $log_path
+    if [[ $p1 != "repo" ]] && [[ $p1 != "raw" ]]; then
+        echo -e "\n## 执行结束... $end_time  耗时 $diff_time 秒" >>$log_path
+        cat $log_path
+    fi
 }
 
 main "$@"

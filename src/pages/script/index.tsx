@@ -10,6 +10,7 @@ import {
   Tooltip,
   Dropdown,
   Menu,
+  Empty,
 } from 'antd';
 import config from '@/utils/config';
 import { PageContainer } from '@ant-design/pro-layout';
@@ -31,6 +32,8 @@ import {
   UserOutlined,
 } from '@ant-design/icons';
 import EditScriptNameModal from './editNameModal';
+import debounce from 'lodash/debounce';
+import { history } from 'umi';
 
 const { Text } = Typography;
 
@@ -69,7 +72,7 @@ const LangMap: any = {
   '.ts': 'typescript',
 };
 
-const Script = ({ headerStyle, isPhone, theme }: any) => {
+const Script = ({ headerStyle, isPhone, theme, socketMessage }: any) => {
   const [title, setTitle] = useState('请选择脚本文件');
   const [value, setValue] = useState('请选择脚本文件');
   const [select, setSelect] = useState<any>();
@@ -90,20 +93,37 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
   const getScripts = () => {
     setLoading(true);
     request
-      .get(`${config.apiPrefix}scripts/files`)
+      .get(`${config.apiPrefix}scripts`)
       .then((data) => {
         setData(data.data);
         setFilterData(data.data);
+        initGetScript();
       })
       .finally(() => setLoading(false));
   };
 
   const getDetail = (node: any) => {
     request
-      .get(`${config.apiPrefix}scripts/${node.value}?path=${node.parent || ''}`)
+      .get(`${config.apiPrefix}scripts/${node.title}?path=${node.parent || ''}`)
       .then((data) => {
         setValue(data.data);
       });
+  };
+
+  const initGetScript = () => {
+    const { p, s } = history.location.query as any;
+    if (s) {
+      const vkey = `${p}/${s}`;
+      const obj = {
+        node: {
+          title: s,
+          key: p ? vkey : s,
+          parent: p,
+        },
+      };
+      setExpandedKeys([p]);
+      onTreeSelect([vkey], obj);
+    }
   };
 
   const onSelect = (value: any, node: any) => {
@@ -113,10 +133,14 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
     setValue('加载中...');
     const newMode = value ? LangMap[value.slice(-3)] : '';
     setMode(isPhone && newMode === 'typescript' ? 'javascript' : newMode);
-    setSelect(value);
-    setTitle(node.parent || node.value);
+    setSelect(node.key);
+    setTitle(node.key);
     setCurrentNode(node);
     getDetail(node);
+  };
+
+  const onExpand = (expKeys: any) => {
+    setExpandedKeys(expKeys);
   };
 
   const onTreeSelect = useCallback(
@@ -147,6 +171,13 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
   const onSearch = useCallback(
     (e) => {
       const keyword = e.target.value;
+      debounceSearch(keyword);
+    },
+    [data, setFilterData],
+  );
+
+  const debounceSearch = useCallback(
+    debounce((keyword) => {
       setSearchValue(keyword);
       const { tree, expandedKeys } = getFilterData(
         keyword.toLocaleLowerCase(),
@@ -154,7 +185,7 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
       );
       setExpandedKeys(expandedKeys);
       setFilterData(tree);
-    },
+    }, 300),
     [data, setFilterData],
   );
 
@@ -167,7 +198,7 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
   const cancelEdit = () => {
     setIsEditing(false);
     setValue('加载中...');
-    getDetail({ value: select });
+    getDetail(currentNode);
   };
 
   const saveFile = () => {
@@ -177,7 +208,7 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
         <>
           确认保存文件
           <Text style={{ wordBreak: 'break-all' }} type="warning">
-            {select}
+            {currentNode.title}
           </Text>{' '}
           ，保存后不可恢复
         </>
@@ -190,7 +221,7 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
           request
             .put(`${config.apiPrefix}scripts`, {
               data: {
-                filename: select,
+                filename: currentNode.title,
                 path: currentNode.parent || '',
                 content,
               },
@@ -230,15 +261,34 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
         request
           .delete(`${config.apiPrefix}scripts`, {
             data: {
-              filename: select,
+              filename: currentNode.title,
+              path: currentNode.parent || '',
             },
           })
           .then((_data: any) => {
             if (_data.code === 200) {
               message.success(`删除成功`);
               let newData = [...data];
-              const index = newData.findIndex((x) => x.value === select);
-              newData.splice(index, 1);
+              if (currentNode.parent) {
+                const parentNodeIndex = newData.findIndex(
+                  (x) => x.key === currentNode.parent,
+                );
+                const parentNode = newData[parentNodeIndex];
+                const index = parentNode.children.findIndex(
+                  (y) => y.key === currentNode.key,
+                );
+                if (index !== -1 && parentNodeIndex !== -1) {
+                  parentNode.children.splice(index, 1);
+                  newData.splice(parentNodeIndex, 1, { ...parentNode });
+                }
+              } else {
+                const index = newData.findIndex(
+                  (x) => x.key === currentNode.key,
+                );
+                if (index !== -1) {
+                  newData.splice(index, 1);
+                }
+              }
               setData(newData);
             } else {
               message.error(_data);
@@ -256,14 +306,32 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
   };
 
   const addFileModalClose = (
-    { filename }: { filename: string } = { filename: '' },
+    { filename, path, key }: { filename: string; path: string; key: string } = {
+      filename: '',
+      path: '',
+      key: '',
+    },
   ) => {
     if (filename) {
       const newData = [...data];
-      const _file = { title: filename, key: filename, value: filename };
-      newData.unshift(_file);
+      const _file = { title: filename, key, parent: path };
+      if (path) {
+        // TODO: 更新左侧树数据
+        const parentNodeIndex = newData.findIndex((x) => x.key === path);
+        if (parentNodeIndex !== -1) {
+          const parentNode = newData[parentNodeIndex];
+          if (parentNode.children && parentNode.children.length > 0) {
+            parentNode.children.unshift(_file);
+          } else {
+            parentNode.children = [_file];
+          }
+          newData.splice(parentNodeIndex, 1, { ...parentNode });
+        }
+      } else {
+        newData.unshift(_file);
+      }
       setData(newData);
-      onSelect(_file.value, _file);
+      onSelect(_file.title, _file);
       setIsEditing(true);
     }
     setIsAddFileModalVisible(false);
@@ -273,7 +341,7 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
     request
       .post(`${config.apiPrefix}scripts/download`, {
         data: {
-          filename: select,
+          filename: currentNode.title,
         },
       })
       .then((_data: any) => {
@@ -281,7 +349,7 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = select;
+        a.download = currentNode.title;
         document.documentElement.appendChild(a);
         a.click();
         document.documentElement.removeChild(a);
@@ -305,27 +373,68 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
     }
   }, []);
 
+  const action = (key: string | number) => {
+    switch (key) {
+      case 'save':
+        saveFile();
+        break;
+      case 'exit':
+        cancelEdit();
+        break;
+      default:
+        break;
+    }
+  };
+
+  const menuAction = (key: string | number) => {
+    switch (key) {
+      case 'save':
+        addFile();
+        break;
+      case 'edit':
+        editFile();
+        break;
+      case 'delete':
+        deleteFile();
+        break;
+      default:
+        break;
+    }
+  };
+
   const menu = isEditing ? (
-    <Menu>
-      <Menu.Item key="save" icon={<PlusOutlined />} onClick={saveFile}>
-        保存
-      </Menu.Item>
-      <Menu.Item key="exit" icon={<EditOutlined />} onClick={cancelEdit}>
-        退出编辑
-      </Menu.Item>
-    </Menu>
+    <Menu
+      items={[
+        { label: '保存', key: 'save', icon: <PlusOutlined /> },
+        { label: '退出编辑', key: 'exit', icon: <EditOutlined /> },
+      ]}
+      onClick={({ key, domEvent }) => {
+        domEvent.stopPropagation();
+        action(key);
+      }}
+    />
   ) : (
-    <Menu>
-      <Menu.Item key="add" icon={<PlusOutlined />} onClick={addFile}>
-        添加
-      </Menu.Item>
-      <Menu.Item key="edit" icon={<EditOutlined />} onClick={editFile}>
-        编辑
-      </Menu.Item>
-      <Menu.Item key="delete" icon={<DeleteOutlined />} onClick={deleteFile}>
-        删除
-      </Menu.Item>
-    </Menu>
+    <Menu
+      items={[
+        { label: '新建', key: 'add', icon: <PlusOutlined /> },
+        {
+          label: '编辑',
+          key: 'edit',
+          icon: <EditOutlined />,
+          disabled: !select,
+        },
+        {
+          label: '删除',
+          key: 'delete',
+          icon: <DeleteOutlined />,
+          disabled: !select,
+        },
+      ]}
+      onClick={({ key, domEvent }) => {
+        domEvent.stopPropagation();
+        menuAction(key);
+      }}
+    />
   );
 
   return (
@@ -341,7 +450,8 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
                 value={select}
                 dropdownStyle={{ maxHeight: 400, overflow: 'auto' }}
                 treeData={data}
-                placeholder="请选择脚本文件"
+                placeholder="请选择脚本"
+                fieldNames={{ value: 'key', label: 'title' }}
                 showSearch
                 onSelect={onSelect}
               />,
@@ -368,6 +478,7 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
               </Tooltip>,
               <Tooltip title="编辑">
                 <Button
+                  disabled={!select}
                   type="primary"
                   onClick={editFile}
                   icon={<EditOutlined />}
@@ -376,6 +487,7 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
               <Tooltip title="删除">
                 <Button
                   type="primary"
+                  disabled={!select}
                   onClick={deleteFile}
                   icon={<DeleteOutlined />}
                 />
@@ -398,21 +510,43 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
         {!isPhone && (
           <SplitPane split="vertical" size={200} maxSize={-100}>
             <div className={styles['left-tree-container']}>
-              <Input.Search
-                className={styles['left-tree-search']}
-                onChange={onSearch}
-              ></Input.Search>
-              <div className={styles['left-tree-scroller']} ref={treeDom}>
-                <Tree
-                  className={styles['left-tree']}
-                  treeData={filterData}
-                  showIcon={true}
-                  height={height}
-                  selectedKeys={[select]}
-                  showLine={{ showLeafIcon: true }}
-                  onSelect={onTreeSelect}
-                ></Tree>
-              </div>
+              {data.length > 0 ? (
+                <>
+                  <Input.Search
+                    className={styles['left-tree-search']}
+                    onChange={onSearch}
+                    placeholder="请输入脚本名"
+                    allowClear
+                  ></Input.Search>
+                  <div className={styles['left-tree-scroller']} ref={treeDom}>
+                    <Tree
+                      className={styles['left-tree']}
+                      treeData={filterData}
+                      showIcon={true}
+                      height={height}
+                      selectedKeys={[select]}
+                      expandedKeys={expandedKeys}
+                      onExpand={onExpand}
+                      showLine={{ showLeafIcon: true }}
+                      onSelect={onTreeSelect}
+                    ></Tree>
+                  </div>
+                </>
+              ) : (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    height: '100%',
+                  }}
+                >
+                  <Empty
+                    description="暂无脚本"
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  />
+                </div>
+              )}
             </div>
             <Editor
               language={mode}
@@ -451,14 +585,16 @@ const Script = ({ headerStyle, isPhone, theme }: any) => {
         <EditModal
           visible={isLogModalVisible}
           treeData={data}
-          currentFile={select}
+          currentNode={currentNode}
           content={value}
+          socketMessage={socketMessage}
           handleCancel={() => {
             setIsLogModalVisible(false);
           }}
         />
         <EditScriptNameModal
           visible={isAddFileModalVisible}
+          treeData={data}
           handleCancel={addFileModalClose}
         />
       </div>

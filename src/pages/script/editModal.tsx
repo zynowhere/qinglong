@@ -24,72 +24,138 @@ const prefixMap: any = {
 
 const EditModal = ({
   treeData,
-  currentFile,
+  currentNode,
   content,
   handleCancel,
   visible,
+  socketMessage,
 }: {
   treeData?: any;
-  currentFile?: string;
   content?: string;
   visible: boolean;
+  socketMessage: any;
+  currentNode: any;
   handleCancel: () => void;
 }) => {
   const [value, setValue] = useState('');
   const [language, setLanguage] = useState<string>('javascript');
-  const [fileName, setFileName] = useState<string>('');
+  const [cNode, setCNode] = useState<any>();
+  const [selectedKey, setSelectedKey] = useState<string>('');
   const [saveModalVisible, setSaveModalVisible] = useState<boolean>(false);
   const [settingModalVisible, setSettingModalVisible] =
     useState<boolean>(false);
   const [log, setLog] = useState<string>('');
   const { theme } = useTheme();
   const editorRef = useRef<any>(null);
+  const [isRunning, setIsRunning] = useState(false);
 
   const cancel = () => {
     handleCancel();
   };
 
   const onSelect = (value: any, node: any) => {
+    if (node.key === selectedKey || !value) {
+      return;
+    }
     const newMode = LangMap[value.slice(-3)] || '';
-    setFileName(value);
+    setCNode(node);
     setLanguage(newMode);
     getDetail(node);
+    setSelectedKey(node.key);
   };
 
   const getDetail = (node: any) => {
-    request.get(`${config.apiPrefix}scripts/${node.value}`).then((data) => {
-      setValue(data.data);
-    });
+    request
+      .get(`${config.apiPrefix}scripts/${node.title}?path=${node.parent || ''}`)
+      .then((data) => {
+        setValue(data.data);
+      });
   };
 
-  const run = () => {};
+  const run = () => {
+    setLog('');
+    const content = editorRef.current.getValue().replace(/\r\n/g, '\n');
+    request
+      .put(`${config.apiPrefix}scripts/run`, {
+        data: {
+          filename: cNode.title,
+          path: cNode.parent || '',
+          content,
+        },
+      })
+      .then((data) => {
+        setIsRunning(true);
+      });
+  };
+
+  const stop = () => {
+    if (!cNode || !cNode.title) {
+      return;
+    }
+    const content = editorRef.current.getValue().replace(/\r\n/g, '\n');
+    request
+      .put(`${config.apiPrefix}scripts/stop`, {
+        data: {
+          filename: cNode.title,
+          path: cNode.parent || '',
+          content,
+        },
+      })
+      .then((data) => {
+        setIsRunning(false);
+      });
+  };
 
   useEffect(() => {
-    if (currentFile) {
-      setFileName(currentFile);
-      setValue(content as string);
+    if (!socketMessage) {
+      return;
     }
-  }, [currentFile, content]);
+
+    let { type, message: _message, references } = socketMessage;
+
+    if (type !== 'manuallyRunScript') {
+      return;
+    }
+
+    if (_message.includes('执行结束')) {
+      setTimeout(() => {
+        setIsRunning(false);
+      }, 300);
+    }
+
+    if (log) {
+      _message = `\n${_message}`;
+    }
+    setLog(`${log}${_message}`);
+  }, [socketMessage]);
+
+  useEffect(() => {
+    if (currentNode) {
+      setCNode(currentNode);
+      setValue(content as string);
+      setSelectedKey(currentNode.key);
+    }
+  }, [content, currentNode]);
 
   return (
     <Drawer
       className="edit-modal"
+      closable={false}
       title={
         <>
-          <span style={{ marginRight: 8 }}>{fileName}</span>
           <TreeSelect
-            style={{ marginRight: 8, width: 120 }}
-            value={currentFile}
+            style={{ marginRight: 8, width: 150 }}
+            value={selectedKey}
             dropdownStyle={{ maxHeight: 400, overflow: 'auto' }}
             treeData={treeData}
             placeholder="请选择脚本文件"
+            fieldNames={{ value: 'key', label: 'title' }}
             showSearch
-            key="value"
             onSelect={onSelect}
           />
           <Select
             value={language}
-            style={{ width: 120, marginRight: 8 }}
+            style={{ width: 110, marginRight: 8 }}
             onChange={(e) => {
               setLanguage(e);
             }}
@@ -99,8 +165,12 @@ const EditModal = ({
             <Option value="shell">shell</Option>
             <Option value="python">python</Option>
           </Select>
-          <Button type="primary" style={{ marginRight: 8 }} onClick={run}>
-            运行
+          <Button
+            type="primary"
+            style={{ marginRight: 8 }}
+            onClick={isRunning ? stop : run}
+          >
+            {isRunning ? '停止' : '运行'}
           </Button>
           <Button
             type="primary"
@@ -129,6 +199,16 @@ const EditModal = ({
           >
             保存
           </Button>
+          <Button
+            type="primary"
+            style={{ marginRight: 8 }}
+            onClick={() => {
+              stop();
+              handleCancel();
+            }}
+          >
+            退出
+          </Button>
         </>
       }
       width={'100%'}
@@ -136,7 +216,12 @@ const EditModal = ({
       onClose={cancel}
       visible={visible}
     >
-      <SplitPane split="vertical" minSize={200} defaultSize="50%">
+      <SplitPane
+        split="vertical"
+        minSize={200}
+        defaultSize="50%"
+        style={{ height: 'calc(100vh - 55px)' }}
+      >
         <Editor
           language={language}
           value={value}
@@ -151,9 +236,7 @@ const EditModal = ({
             editorRef.current = editor;
           }}
         />
-        <div>
-          <pre>{log}</pre>
-        </div>
+        <pre style={{ height: '100%', whiteSpace: 'break-spaces' }}>{log}</pre>
       </SplitPane>
       <SaveModal
         visible={saveModalVisible}
@@ -164,7 +247,7 @@ const EditModal = ({
           content:
             editorRef.current &&
             editorRef.current.getValue().replace(/\r\n/g, '\n'),
-          filename: fileName,
+          filename: cNode?.title,
         }}
       />
       <SettingModal

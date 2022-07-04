@@ -7,6 +7,8 @@ import cron from './cron';
 import script from './script';
 import open from './open';
 import dependence from './dependence';
+import system from './system';
+import subscription from './subscription';
 
 export default () => {
   const app = Router();
@@ -18,6 +20,8 @@ export default () => {
   script(app);
   open(app);
   dependence(app);
+  system(app);
+  subscription(app);
 
   return app;
 };

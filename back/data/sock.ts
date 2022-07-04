@@ -1,7 +1,7 @@
 export class SockMessage {
   message?: string;
   type?: SockMessageType;
-  references?: string[];
+  references?: number[];
 
   constructor(options: SockMessage) {
     this.type = options.type;
@@ -13,4 +13,7 @@ export class SockMessage {
 export type SockMessageType =
   | 'ping'
   | 'installDependence'
-  | 'updateSystemVersion';
+  | 'uninstallDependence'
+  | 'updateSystemVersion'
+  | 'manuallyRunScript'
+  | 'runSubscriptionEnd';

@@ -35,6 +35,7 @@ push_config = {
     'BARK_ARCHIVE': '',                 # bark 推送是否存档
     'BARK_GROUP': '',                   # bark 推送分组
     'BARK_SOUND': '',                   # bark 推送声音
+    'BARK_ICON': '',                    # bark 推送图标
 
     'CONSOLE': True,                    # 控制台输出
 
@@ -51,10 +52,16 @@ push_config = {
                                         #               /send_group_msg   时填入 group_id=QQ群
     'GOBOT_TOKEN': '',                  # go-cqhttp 的 access_token
 
+    'GOTIFY_URL': '',                   # gotify地址,如https://push.example.de:8080
+    'GOTIFY_TOKEN': '',                 # gotify的消息应用token
+    'GOTIFY_PRIORITY': 0,               # 推送消息优先级,默认为0
+
     'IGOT_PUSH_KEY': '',                # iGot 聚合推送的 IGOT_PUSH_KEY
 
     'PUSH_KEY': '',                     # server 酱的 PUSH_KEY，兼容旧版与 Turbo 版
 
+    'DEER_KEY': '',                     # PushDeer 的 PUSHDEER_KEY
+    
     'PUSH_PLUS_TOKEN': '',              # push+ 微信推送的用户令牌
     'PUSH_PLUS_USER': '',               # push+ 微信推送的群组编码
 
@@ -100,6 +107,7 @@ def bark(title: str, content: str) -> None:
         "BARK_ARCHIVE": "isArchive",
         "BARK_GROUP": "group",
         "BARK_SOUND": "sound",
+        "BARK_ICON": "icon",
     }
     params = ""
     for pair in filter(
@@ -194,6 +202,25 @@ def go_cqhttp(title: str, content: str) -> None:
         print("go-cqhttp 推送失败！")
 
 
+def gotify(title:str,content:str)  -> None:
+    """
+    使用 gotify 推送消息。
+    """
+    if not push_config.get("GOTIFY_URL") or not push_config.get("GOTIFY_TOKEN"):
+        print("gotify 服务的 GOTIFY_URL 或 GOTIFY_TOKEN 未设置!!\n取消推送")
+        return
+    print("gotify 服务启动")
+
+    url = f'{push_config.get("GOTIFY_URL")}/message?token={push_config.get("GOTIFY_TOKEN")}'
+    data = {"title": title,"message": content,"priority": push_config.get("GOTIFY_PRIORITY")}
+    response = requests.post(url,data=data).json()
+
+    if response.get("id"):
+        print("gotify 推送成功！")
+    else:
+        print("gotify 推送失败！")
+
+
 def iGot(title: str, content: str) -> None:
     """
     使用 iGot 推送消息。
@@ -236,6 +263,24 @@ def serverJ(title: str, content: str) -> None:
         print(f'serverJ 推送失败！错误码：{response["message"]}')
 
 
+def pushdeer(title: str, content: str) -> None:
+    """
+    通过PushDeer 推送消息
+    """
+    if not push_config.get("DEER_KEY"):
+        print("PushDeer 服务的 DEER_KEY 未设置!!\n取消推送")
+        return
+    print("PushDeer 服务启动")
+    data = {"text": title, "desp": content, "type": "markdown", "pushkey": push_config.get("DEER_KEY")}
+    url = 'https://api2.pushdeer.com/message/push'
+    response = requests.post(url, data=data).json()
+    
+    if len(response.get("content").get("result")) > 0:
+        print("PushDeer 推送成功！")
+    else:
+        print("PushDeer 推送失败！错误信息：", response)
+    
+
 def pushplus_bot(title: str, content: str) -> None:
     """
     通过 push+ 推送消息。
@@ -262,6 +307,7 @@ def pushplus_bot(title: str, content: str) -> None:
     else:
 
         url_old = "http://pushplus.hxtrip.com/send"
+        headers["Accept"] = "application/json"
         response = requests.post(url=url_old, data=body, headers=headers).json()
 
         if response["code"] == 200:
@@ -473,10 +519,14 @@ if push_config.get("FSKEY"):
     notify_function.append(feishu_bot)
 if push_config.get("GOBOT_URL") and push_config.get("GOBOT_QQ"):
     notify_function.append(go_cqhttp)
+if push_config.get("GOTIFY_URL") and push_config.get("GOTIFY_TOKEN"):
+    notify_function.append(gotify)
 if push_config.get("IGOT_PUSH_KEY"):
     notify_function.append(iGot)
 if push_config.get("PUSH_KEY"):
     notify_function.append(serverJ)
+if push_config.get("DEER_KEY"):
+    notify_function.append(pushdeer)
 if push_config.get("PUSH_PLUS_TOKEN"):
     notify_function.append(pushplus_bot)
 if push_config.get("QMSG_KEY") and push_config.get("QMSG_TYPE"):

@@ -27,7 +27,7 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import './index.less';
 import { getTableScroll } from '@/utils/index';
 
-const { Text } = Typography;
+const { Text, Paragraph } = Typography;
 const { Search } = Input;
 
 enum Status {
@@ -101,7 +101,7 @@ const Env = ({ headerStyle, isPhone, theme }: any) => {
     {
       title: '序号',
       align: 'center' as const,
-      width: 50,
+      width: 60,
       render: (text: string, record: any, index: number) => {
         return <span style={{ cursor: 'text' }}>{index + 1} </span>;
       },
@@ -119,18 +119,18 @@ const Env = ({ headerStyle, isPhone, theme }: any) => {
       key: 'value',
       align: 'center' as const,
       width: '35%',
-      ellipsis: {
-        showTitle: false,
-      },
       render: (text: string, record: any) => {
         return (
-          <Tooltip
-            placement="topLeft"
-            title={text}
-            trigger={['hover', 'click']}
+          <Paragraph
+            style={{
+              wordBreak: 'break-all',
+              marginBottom: 0,
+              textAlign: 'left',
+            }}
+            ellipsis={{ tooltip: text, rows: 2 }}
           >
-            <span>{text}</span>
-          </Tooltip>
+            {text}
+          </Paragraph>
         );
       },
     },
@@ -149,9 +149,17 @@ const Env = ({ headerStyle, isPhone, theme }: any) => {
       ellipsis: {
         showTitle: false,
       },
+      sorter: {
+        compare: (a: any, b: any) => {
+          const updatedAtA = new Date(a.updatedAt || a.timestamp).getTime();
+          const updatedAtB = new Date(b.updatedAt || b.timestamp).getTime();
+          return updatedAtA - updatedAtB;
+        },
+      },
       render: (text: string, record: any) => {
         const language = navigator.language || navigator.languages[0];
-        const date = new Date(text)
+        const time = record.updatedAt || record.timestamp;
+        const date = new Date(time)
           .toLocaleString(language, {
             hour12: false,
           })
@@ -197,7 +205,7 @@ const Env = ({ headerStyle, isPhone, theme }: any) => {
     {
       title: '操作',
       key: 'action',
-      width: 100,
+      width: 120,
       align: 'center' as const,
       render: (text: string, record: any, index: number) => {
         const isPc = !isPhone;
@@ -270,7 +278,7 @@ const Env = ({ headerStyle, isPhone, theme }: any) => {
               record.status === Status.已禁用 ? 'enable' : 'disable'
             }`,
             {
-              data: [record._id],
+              data: [record.id],
             },
           )
           .then((data: any) => {
@@ -321,7 +329,7 @@ const Env = ({ headerStyle, isPhone, theme }: any) => {
       ),
       onOk() {
         request
-          .delete(`${config.apiPrefix}envs`, { data: [record._id] })
+          .delete(`${config.apiPrefix}envs`, { data: [record.id] })
           .then((data: any) => {
             if (data.code === 200) {
               message.success('删除成功');
@@ -351,7 +359,7 @@ const Env = ({ headerStyle, isPhone, theme }: any) => {
 
   const handleEnv = (env: any) => {
     const result = [...value];
-    const index = value.findIndex((x) => x._id === env._id);
+    const index = value.findIndex((x) => x.id === env.id);
     if (index === -1) {
       env = Array.isArray(env) ? env : [env];
       result.push(...env);
@@ -376,7 +384,7 @@ const Env = ({ headerStyle, isPhone, theme }: any) => {
       }
       const dragRow = value[dragIndex];
       request
-        .put(`${config.apiPrefix}envs/${dragRow._id}/move`, {
+        .put(`${config.apiPrefix}envs/${dragRow.id}/move`, {
           data: { fromIndex: dragIndex, toIndex: hoverIndex },
         })
         .then((data: any) => {
@@ -485,7 +493,7 @@ const Env = ({ headerStyle, isPhone, theme }: any) => {
           onSearch={onSearch}
         />,
         <Button key="2" type="primary" onClick={() => addEnv()}>
-          添加变量
+          新建变量
         </Button>,
       ]}
       header={{
@@ -534,7 +542,7 @@ const Env = ({ headerStyle, isPhone, theme }: any) => {
           rowSelection={rowSelection}
           pagination={false}
           dataSource={value}
-          rowKey="_id"
+          rowKey="id"
           size="middle"
           scroll={{ x: 1000, y: tableScrollHeight }}
           components={components}

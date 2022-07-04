@@ -20,13 +20,13 @@ const AppModal = ({
     const method = app ? 'put' : 'post';
     const payload = { ...values };
     if (app) {
-      payload._id = app._id;
+      payload.id = app.id;
     }
     const { code, data } = await request[method](`${config.apiPrefix}apps`, {
       data: payload,
     });
     if (code === 200) {
-      message.success(app ? '更新应用成功' : '添加应用成功');
+      message.success(app ? '更新应用成功' : '新建应用成功');
     } else {
       message.error(data);
     }
@@ -43,6 +43,8 @@ const AppModal = ({
       title={app ? '编辑应用' : '新建应用'}
       visible={visible}
       forceRender
+      centered
+      maskClosable={false}
       onOk={() => {
         form
           .validateFields()

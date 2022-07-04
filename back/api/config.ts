@@ -8,10 +8,10 @@ import { celebrate, Joi } from 'celebrate';
 const route = Router();
 
 export default (app: Router) => {
-  app.use('/', route);
+  app.use('/configs', route);
 
   route.get(
-    '/configs/files',
+    '/files',
     async (req: Request, res: Response, next: NextFunction) => {
       const logger: Logger = Container.get('logger');
       try {
@@ -25,14 +25,13 @@ export default (app: Router) => {
             }),
         });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
   );
 
   route.get(
-    '/configs/:file',
+    '/:file',
     async (req: Request, res: Response, next: NextFunction) => {
       const logger: Logger = Container.get('logger');
       try {
@@ -51,14 +50,13 @@ export default (app: Router) => {
         }
         res.send({ code: 200, data: content });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },
   );
 
   route.post(
-    '/configs/save',
+    '/save',
     celebrate({
       body: Joi.object({
         name: Joi.string().required(),
@@ -76,7 +74,6 @@ export default (app: Router) => {
         fs.writeFileSync(path, content);
         res.send({ code: 200, message: '保存成功' });
       } catch (e) {
-        logger.error('🔥 error: %o', e);
         return next(e);
       }
     },

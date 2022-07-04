@@ -1,4 +1,4 @@
-@import '~antd/lib/style/themes/default.less';
+@import '~antd/es/style/themes/default.less';
 @import '~@/styles/variable.less';
 @import '~codemirror/lib/codemirror.css';
 
@@ -7,6 +7,12 @@
   src: url('../assets/fonts/SourceCodePro-Regular.ttf.woff2') format('woff2'),
     url('../assets/fonts/SourceCodePro-Regular.otf.woff') format('woff'),
     url('../assets/fonts/SourceCodePro-Regular.ttf') format('truetype');
+}
+
+.ant-modal-body {
+  max-height: calc(85vh - 110px);
+  max-height: calc(85vh - var(--vh-offset, 110px));
+  overflow-y: auto;
 }
 
 .log-modal {
@@ -26,6 +32,7 @@
 .monaco-editor:not(.rename-box) {
   height: calc(100vh - 128px) !important;
   height: calc(100vh - var(--vh-offset, 0px) - 128px) !important;
+
   .view-overlays .current-line {
     border-width: 0;
   }
@@ -33,6 +40,7 @@
 
 .rename-box {
   height: 0;
+
   .rename-input {
     height: 0;
     padding: 0 !important;
@@ -43,10 +51,11 @@
 .ant-pro-grid-content.wide {
   max-width: unset !important;
   overflow: auto;
+
   .ant-pro-page-container-children-content {
     overflow: auto;
     height: 100%;
-    background-color: #fff;
+    background-color: @component-background;
     padding: 16px;
   }
 }
@@ -57,6 +66,7 @@
 
 .ant-tooltip {
   max-width: 500px !important;
+
   .ant-tooltip-inner {
     word-break: break-all !important;
   }
@@ -72,6 +82,7 @@
   .log-select {
     width: 250px;
   }
+
   .ant-page-header-heading-left {
     min-width: 100px;
   }
@@ -81,6 +92,7 @@
   .config-select {
     width: 250px;
   }
+
   .ant-page-header-heading-left {
     min-width: 100px;
   }
@@ -119,10 +131,13 @@
   flex-direction: column;
   height: calc(100vh - 48px);
   height: calc(100vh - var(--vh-offset, 0px) - 48px);
+
   .ant-pro-grid-content.wide {
     flex: 1;
+
     .ant-pro-grid-content-children {
       height: calc(100% - 36px);
+
       > div,
       .log-container,
       .react-codemirror2,
@@ -152,12 +167,12 @@
 
 .ant-layout-content.ant-pro-basicLayout-content.ant-pro-basicLayout-has-header {
   margin-bottom: 0 !important;
-  min-height: calc(100vh - 66px);
-  min-height: calc(100vh - var(--vh-offset, 0px) - 66px);
+  min-height: calc(100vh - 72px);
+  min-height: calc(100vh - var(--vh-offset, 0px) - 72px);
 }
 
 .Resizer {
-  background: #fff;
+  background: @component-background;
   opacity: 0.2;
   z-index: 1;
   -moz-box-sizing: border-box;
@@ -197,6 +212,7 @@
 .Resizer.disabled {
   cursor: not-allowed;
 }
+
 .Resizer.disabled:hover {
   border-color: transparent;
 }
@@ -209,6 +225,7 @@
 
 .inline-countdown.ant-statistic {
   display: inline-block;
+
   .ant-statistic-content {
     font-size: 14px;
     padding: 0 3px;
@@ -235,6 +252,7 @@
     box-shadow: none;
     transition: background-color 5000s ease-in-out 0s;
     -webkit-text-fill-color: @text-color;
+    caret-color: #e8e6f3 !important;
   }
 
   ::placeholder {
@@ -252,6 +270,7 @@
 
 .ant-pro-basicLayout-content {
   margin: 18px;
+
   .ant-pro-page-container {
     margin: -18px -18px -18px;
   }
@@ -265,7 +284,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: rgba(0, 0, 0, 0.85);
+  color: @text-color;
 
   .side-menu-collapse-button:hover {
     color: #1890ff;
@@ -279,16 +298,36 @@
 
 .side-menu-user-drop-menu {
   position: relative;
-  margin: 0;
-  padding: 4px 0;
   text-align: left;
-  background-clip: padding-box;
   outline: none;
-  background-color: #fff;
+  padding: 4px 0;
+  border: 1px solid fade(@component-background, 0.12);
   border-radius: 4px;
-  box-shadow: 0 6px 16px -8px rgb(0 0 0 / 8%), 0 9px 28px 0 rgb(0 0 0 / 5%),
-    0 12px 48px 16px rgb(0 0 0 / 3%);
-  .ant-dropdown-menu-item:hover {
-    color: #1890ff;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  overflow: auto;
+  background-color: @component-background;
+}
+
+[data-dark='true'] .side-menu-user-drop-menu {
+  background-color: #373739;
+}
+
+.ant-pro-sider-logo {
+  padding: 16px 8px !important;
+
+  h1 {
+    margin-left: 5px !important;
+  }
+
+  img {
+    width: 32px !important;
+    border-radius: 52% !important;
+  }
+}
+
+.ant-pro-global-header-logo {
+  a img {
+    // 移动端logo被拉伸
+    width: auto !important;
   }
 }

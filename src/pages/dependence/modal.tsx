@@ -26,7 +26,7 @@ const DependenceModal = ({
 
   const handleOk = async (values: any) => {
     setLoading(true);
-    const { name, split, type } = values;
+    const { name, split, type, remark } = values;
     const method = dependence ? 'put' : 'post';
     let payload;
     if (!dependence) {
@@ -36,13 +36,14 @@ const DependenceModal = ({
           return {
             name: x,
             type,
+            remark,
           };
         });
       } else {
-        payload = [{ name, type }];
+        payload = [{ name, type, remark }];
       }
     } else {
-      payload = { ...values, _id: dependence._id };
+      payload = { ...values, id: dependence.id };
     }
     try {
       const { code, data } = await request[method](
@@ -70,6 +71,8 @@ const DependenceModal = ({
       title={dependence ? '编辑依赖' : '新建依赖'}
       visible={visible}
       forceRender
+      centered
+      maskClosable={false}
       onOk={() => {
         form
           .validateFields()

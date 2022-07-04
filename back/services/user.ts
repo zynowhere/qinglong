@@ -6,8 +6,7 @@ import * as fs from 'fs';
 import _ from 'lodash';
 import jwt from 'jsonwebtoken';
 import { authenticator } from '@otplib/preset-default';
-import DataStore from 'nedb';
-import { AuthDataType, AuthInfo, LoginStatus } from '../data/auth';
+import { AuthDataType, AuthInfo, AuthModel, LoginStatus } from '../data/auth';
 import { NotificationInfo } from '../data/notify';
 import NotificationService from './notify';
 import { Request } from 'express';
@@ -15,13 +14,11 @@ import ScheduleService from './schedule';
 import { spawn } from 'child_process';
 import SockService from './sock';
 import got from 'got';
-import { dbs } from '../loaders/db';
 
 @Service()
 export default class UserService {
   @Inject((type) => NotificationService)
   private notificationService!: NotificationService;
-  private authDb = dbs.authDb;
 
   constructor(
     @Inject('logger') private logger: winston.Logger,
@@ -174,33 +171,24 @@ export default class UserService {
   }
 
   public async getLoginLog(): Promise<AuthInfo[]> {
-    return new Promise((resolve) => {
-      this.authDb.find({ type: AuthDataType.loginLog }).exec((err, docs) => {
-        if (err || docs.length === 0) {
-          resolve([]);
-        } else {
-          const result = docs.sort(
-            (a, b) => b.info.timestamp - a.info.timestamp,
-          );
-          if (result.length > 100) {
-            this.authDb.remove({ _id: result[result.length - 1]._id });
-          }
-          resolve(result.map((x) => x.info));
-        }
-      });
+    const docs = await AuthModel.findAll({
+      where: { type: AuthDataType.loginLog },
     });
+    if (docs && docs.length > 0) {
+      const result = docs.sort((a, b) => b.info.timestamp - a.info.timestamp);
+      if (result.length > 100) {
+        await AuthModel.destroy({
+          where: { id: result[result.length - 1].id },
+        });
+      }
+      return result.map((x) => x.info);
+    }
+    return [];
   }
 
   private async insertDb(payload: AuthInfo): Promise<AuthInfo> {
-    return new Promise((resolve) => {
-      this.authDb.insert(payload, (err, doc) => {
-        if (err) {
-          this.logger.error(err);
-        } else {
-          resolve(doc);
-        }
-      });
-    });
+    const doc = await AuthModel.create({ ...payload }, { returning: true });
+    return doc;
   }
 
   private initAuthInfo() {
@@ -231,6 +219,12 @@ export default class UserService {
     const authInfo = this.getAuthInfo();
     this.updateAuthInfo(authInfo, { username, password });
     return { code: 200, message: '更新成功' };
+  }
+
+  public async updateAvatar(avatar: string) {
+    const authInfo = this.getAuthInfo();
+    this.updateAuthInfo(authInfo, { avatar });
+    return { code: 200, data: avatar, message: '更新成功' };
   }
 
   public getUserInfo(): Promise<any> {
@@ -315,48 +309,27 @@ export default class UserService {
   }
 
   public async getNotificationMode(): Promise<NotificationInfo> {
-    return new Promise((resolve) => {
-      this.authDb
-        .find({ type: AuthDataType.notification })
-        .exec((err, docs) => {
-          if (err || docs.length === 0) {
-            resolve({} as NotificationInfo);
-          } else {
-            resolve(docs[0].info);
-          }
-        });
-    });
-  }
-
-  public async getLogRemoveFrequency() {
-    return new Promise((resolve) => {
-      this.authDb
-        .find({ type: AuthDataType.removeLogFrequency })
-        .exec((err, docs) => {
-          if (err || docs.length === 0) {
-            resolve({});
-          } else {
-            resolve(docs[0].info);
-          }
-        });
-    });
+    const doc = await this.getDb({ type: AuthDataType.notification });
+    return (doc && doc.info) || {};
   }
 
   private async updateAuthDb(payload: AuthInfo): Promise<any> {
-    return new Promise((resolve) => {
-      this.authDb.update(
-        { type: payload.type },
-        { ...payload },
-        { upsert: true, returnUpdatedDocs: true },
-        (err, num, doc: any) => {
-          if (err) {
-            resolve({} as NotificationInfo);
-          } else {
-            resolve({ ...doc.info, _id: doc._id });
-          }
-        },
-      );
-    });
+    let doc = await AuthModel.findOne({ type: payload.type });
+    if (doc) {
+      const updateResult = await AuthModel.update(payload, {
+        where: { id: doc.id },
+        returning: true,
+      });
+      doc = updateResult[1][0];
+    } else {
+      doc = await AuthModel.create(payload, { returning: true });
+    }
+    return doc;
+  }
+
+  public async getDb(query: any): Promise<any> {
+    const doc: any = await AuthModel.findOne({ where: { ...query } });
+    return doc && (doc.get({ plain: true }) as any);
   }
 
   public async updateNotificationMode(notificationInfo: NotificationInfo) {
@@ -373,107 +346,7 @@ export default class UserService {
       });
       return { code: 200, data: { ...result, code } };
     } else {
-      return { code: 400, data: '通知发送失败，请检查参数' };
+      return { code: 400, message: '通知发送失败，请检查参数' };
     }
-  }
-
-  public async updateLogRemoveFrequency(frequency: number) {
-    const result = await this.updateAuthDb({
-      type: AuthDataType.removeLogFrequency,
-      info: { frequency },
-    });
-    const cron = {
-      _id: result._id,
-      name: '删除日志',
-      command: `ql rmlog ${frequency}`,
-      schedule: `5 23 */${frequency} * *`,
-    };
-    await this.scheduleService.cancelSchedule(cron);
-    if (frequency > 0) {
-      await this.scheduleService.generateSchedule(cron);
-    }
-    return { code: 200, data: { ...cron } };
-  }
-
-  public async checkUpdate() {
-    try {
-      const versionRegx = /.*export const version = \'(.*)\'\;/;
-      const logRegx = /.*export const changeLog = \`((.*\n.*)+)\`;/;
-
-      const currentVersionFile = fs.readFileSync(config.versionFile, 'utf8');
-      const currentVersion = currentVersionFile.match(versionRegx)![1];
-
-      const lastVersionFileContent = await (
-        await got.get(config.lastVersionFile)
-      ).body;
-      const lastVersion = lastVersionFileContent.match(versionRegx)![1];
-      const lastLog = lastVersionFileContent.match(logRegx)
-        ? lastVersionFileContent.match(logRegx)![1]
-        : '';
-
-      return {
-        code: 200,
-        data: {
-          hasNewVersion: this.checkHasNewVersion(currentVersion, lastVersion),
-          lastVersion,
-          lastLog,
-        },
-      };
-    } catch (error: any) {
-      return {
-        code: 400,
-        data: error.message,
-      };
-    }
-  }
-
-  private checkHasNewVersion(curVersion: string, lastVersion: string) {
-    const curArr = curVersion.split('.').map((x) => parseInt(x, 10));
-    const lastArr = lastVersion.split('.').map((x) => parseInt(x, 10));
-    if (curArr[0] < lastArr[0]) {
-      return true;
-    }
-    if (curArr[0] === lastArr[0] && curArr[1] < lastArr[1]) {
-      return true;
-    }
-    if (
-      curArr[0] === lastArr[0] &&
-      curArr[1] === lastArr[1] &&
-      curArr[2] < lastArr[2]
-    ) {
-      return true;
-    }
-    return false;
-  }
-
-  public async updateSystem() {
-    const cp = spawn('ql -l update', { shell: '/bin/bash' });
-
-    this.sockService.sendMessage({
-      type: 'updateSystemVersion',
-      message: `开始更新系统`,
-    });
-    cp.stdout.on('data', (data) => {
-      this.sockService.sendMessage({
-        type: 'updateSystemVersion',
-        message: data.toString(),
-      });
-    });
-
-    cp.stderr.on('data', (data) => {
-      this.sockService.sendMessage({
-        type: 'updateSystemVersion',
-        message: data.toString(),
-      });
-    });
-
-    cp.on('error', (err) => {
-      this.sockService.sendMessage({
-        type: 'updateSystemVersion',
-        message: JSON.stringify(err),
-      });
-    });
-
-    return { code: 200 };
   }
 }

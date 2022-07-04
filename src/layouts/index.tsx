@@ -1,11 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import ProLayout, { PageLoading } from '@ant-design/pro-layout';
-import {
-  enable as enableDarkMode,
-  disable as disableDarkMode,
-  auto as followSystemColorScheme,
-  setFetchMethod,
-} from 'darkreader';
+import * as DarkReader from '@umijs/ssr-darkreader';
 import defaultProps from './defaultProps';
 import { Link, history } from 'umi';
 import {
@@ -20,31 +15,31 @@ import './index.less';
 import vhCheck from 'vh-check';
 import { version, changeLogLink, changeLog } from '../version';
 import { useCtx, useTheme } from '@/utils/hooks';
-import { message, Badge, Modal, Avatar, Dropdown, Menu, Popover } from 'antd';
+import { message, Badge, Modal, Avatar, Dropdown, Menu, Image } from 'antd';
 // @ts-ignore
 import SockJS from 'sockjs-client';
 import * as Sentry from '@sentry/react';
-import { Integrations } from '@sentry/tracing';
-
-Sentry.init({
-  dsn: 'https://ea2fede373244db99c536210b910d9da@o1051273.ingest.sentry.io/6047851',
-  integrations: [new Integrations.BrowserTracing()],
-  release: version,
-  tracesSampleRate: 1.0,
-});
+import { init } from '../utils/init';
 
 export default function (props: any) {
   const ctx = useCtx();
-  const theme = useTheme();
-  const [user, setUser] = useState<any>();
+  const { theme, reloadTheme } = useTheme();
+  const [user, setUser] = useState<any>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [systemInfo, setSystemInfo] = useState<{ isInitialized: boolean }>();
   const ws = useRef<any>(null);
   const [socketMessage, setSocketMessage] = useState<any>();
   const [collapsed, setCollapsed] = useState(false);
+  const {
+    enable: enableDarkMode,
+    disable: disableDarkMode,
+    exportGeneratedCSS: collectCSS,
+    setFetchMethod,
+    auto: followSystemColorScheme,
+  } = DarkReader || {};
 
   const logout = () => {
-    request.post(`${config.apiPrefix}logout`).then(() => {
+    request.post(`${config.apiPrefix}user/logout`).then(() => {
       localStorage.removeItem(config.authKey);
       history.push('/login');
     });
@@ -91,25 +86,9 @@ export default function (props: any) {
       });
   };
 
-  const reloadUser = () => {
-    getUser(false);
+  const reloadUser = (needLoading = false) => {
+    getUser(needLoading);
   };
-
-  const setTheme = () => {
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const storageTheme = localStorage.getItem('qinglong_dark_theme');
-    const isDark =
-      (media.matches && storageTheme !== 'light') || storageTheme === 'dark';
-    if (isDark) {
-      document.body.setAttribute('data-dark', 'true');
-    } else {
-      document.body.setAttribute('data-dark', 'false');
-    }
-  };
-
-  useEffect(() => {
-    vhCheck();
-  }, []);
 
   useEffect(() => {
     if (systemInfo && systemInfo.isInitialized && !user) {
@@ -124,12 +103,25 @@ export default function (props: any) {
   }, [systemInfo]);
 
   useEffect(() => {
-    setTheme();
-  }, [theme.theme]);
+    if (theme === 'vs-dark') {
+      document.body.setAttribute('data-dark', 'true');
+    } else {
+      document.body.setAttribute('data-dark', 'false');
+    }
+  }, [theme]);
 
   useEffect(() => {
+    vhCheck();
+    init();
+
     const _theme = localStorage.getItem('qinglong_dark_theme') || 'auto';
-    setFetchMethod(window.fetch);
+    if (typeof window === 'undefined') return;
+    if (typeof window.matchMedia === 'undefined') return;
+    if (!DarkReader) {
+      return () => null;
+    }
+    setFetchMethod(fetch);
+
     if (_theme === 'dark') {
       enableDarkMode({});
     } else if (_theme === 'light') {
@@ -137,6 +129,10 @@ export default function (props: any) {
     } else {
       followSystemColorScheme({});
     }
+
+    return () => {
+      disableDarkMode();
+    };
   }, []);
 
   useEffect(() => {
@@ -187,7 +183,9 @@ export default function (props: any) {
     };
   }, []);
 
-  if (['/login', '/initialization'].includes(props.location.pathname)) {
+  if (
+    ['/login', '/initialization', '/error'].includes(props.location.pathname)
+  ) {
     document.title = `${
       (config.documentTitleMap as any)[props.location.pathname]
     } - 控制面板`;
@@ -198,14 +196,14 @@ export default function (props: any) {
       history.push('/crontab');
     }
 
-    if (systemInfo) {
+    if (systemInfo || props.location.pathname === '/error') {
       return React.Children.map(props.children, (child) => {
         return React.cloneElement(child, {
           ...ctx,
-          ...theme,
+          theme,
           user,
           reloadUser,
-          reloadTheme: setTheme,
+          reloadTheme,
           ws: ws.current,
         });
       });
@@ -219,11 +217,11 @@ export default function (props: any) {
   const isQQBrowser = navigator.userAgent.includes('QQBrowser');
 
   const menu = (
-    <Menu className="side-menu-user-drop-menu">
-      <Menu.Item key="1" icon={<LogoutOutlined />} onClick={logout}>
-        退出登录
-      </Menu.Item>
-    </Menu>
+    <Menu
+      className="side-menu-user-drop-menu"
+      items={[{ label: '退出登录', key: 'logout', icon: <LogoutOutlined /> }]}
+      onClick={logout}
+    />
   );
   return loading ? (
     <PageLoading />
@@ -232,6 +230,7 @@ export default function (props: any) {
       selectedKeys={[props.location.pathname]}
       loading={loading}
       ErrorBoundary={Sentry.ErrorBoundary}
+      logo={<Image preview={false} src="http://qn.whyour.cn/logo.png" />}
       title={
         <>
           <span style={{ fontSize: 16 }}>控制面板</span>
@@ -275,14 +274,21 @@ export default function (props: any) {
       }}
       onCollapse={setCollapsed}
       collapsed={collapsed}
-      rightContentRender={() => (
-        <Dropdown overlay={menu} trigger={['click']}>
-          <span className="side-menu-user-wrapper">
-            <Avatar shape="square" size="small" icon={<UserOutlined />} />
-            <span style={{ marginLeft: 5 }}>admin</span>
-          </span>
-        </Dropdown>
-      )}
+      rightContentRender={() =>
+        ctx.isPhone && (
+          <Dropdown overlay={menu} placement="bottomRight" trigger={['click']}>
+            <span className="side-menu-user-wrapper">
+              <Avatar
+                shape="square"
+                size="small"
+                icon={<UserOutlined />}
+                src={`/api/static/${user.avatar}`}
+              />
+              <span style={{ marginLeft: 5 }}>{user.username}</span>
+            </span>
+          </Dropdown>
+        )
+      }
       collapsedButtonRender={(collapsed) => (
         <span
           className="side-menu-container"
@@ -292,10 +298,15 @@ export default function (props: any) {
           }}
         >
           {!collapsed && !ctx.isPhone && (
-            <Dropdown overlay={menu} trigger={['hover']}>
+            <Dropdown overlay={menu} placement="topLeft" trigger={['hover']}>
               <span className="side-menu-user-wrapper">
-                <Avatar shape="square" size="small" icon={<UserOutlined />} />
-                <span style={{ marginLeft: 5 }}>admin</span>
+                <Avatar
+                  shape="square"
+                  size="small"
+                  icon={<UserOutlined />}
+                  src={`/api/static/${user.avatar}`}
+                />
+                <span style={{ marginLeft: 5 }}>{user.username}</span>
               </span>
             </Dropdown>
           )}
@@ -312,10 +323,10 @@ export default function (props: any) {
       {React.Children.map(props.children, (child) => {
         return React.cloneElement(child, {
           ...ctx,
-          ...theme,
+          theme,
           user,
           reloadUser,
-          reloadTheme: setTheme,
+          reloadTheme,
           socketMessage,
         });
       })}
